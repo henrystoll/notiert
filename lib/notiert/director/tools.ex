@@ -208,13 +208,13 @@ defmodule Notiert.Director.Tools do
     %{
       "name" => "do_nothing",
       "description" =>
-        "Explicitly take no action this cycle. Sometimes the most unsettling thing is a pause. Good direction means knowing when NOT to act.",
+        "Skip this cycle. ONLY use when the visitor has been idle 15+ seconds or has left the tab. In all other cases, use a visible action instead (rewrite_section, show_cursor, adjust_visual, add_margin_note). If you find yourself wanting to do_nothing, ask: could I make a small edit instead? The answer is almost always yes.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
           "reason" => %{
             "type" => "string",
-            "description" => "Why you're waiting. Helps maintain narrative continuity."
+            "description" => "Why you're waiting — must be visitor idle/away, not 'observing' or 'gathering data'."
           }
         },
         "required" => ["reason"]

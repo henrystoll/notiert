@@ -116,10 +116,10 @@ defmodule Notiert.Director.Phase do
   """
   def suggested_for_elapsed(elapsed_ms) do
     cond do
-      elapsed_ms < 6_000 -> :silent
-      elapsed_ms < 18_000 -> :subtle
-      elapsed_ms < 40_000 -> :suspicious
-      elapsed_ms < 75_000 -> :overt
+      elapsed_ms < 3_000 -> :silent
+      elapsed_ms < 10_000 -> :subtle
+      elapsed_ms < 25_000 -> :suspicious
+      elapsed_ms < 60_000 -> :overt
       true -> :climax
     end
   end

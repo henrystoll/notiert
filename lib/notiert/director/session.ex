@@ -464,18 +464,25 @@ defmodule Notiert.Director.Session do
         events
       end
 
-    # Section changed
+    # Section changed — only log if they spent meaningful time on the previous section
+    # (skip rapid scroll-through section changes that just add noise)
     events =
       if old["currentSection"] && old["currentSection"] != new_behavior["currentSection"] do
         dwell_ms = get_in(old, ["sectionDwells", old["currentSection"], "totalMs"]) || 0
-        e = build_event(state, :section_change, %{
-          detail: "Moved to #{new_behavior["currentSection"]} (was #{old["currentSection"]}, spent #{dwell_ms}ms)",
-          from: old["currentSection"],
-          to: new_behavior["currentSection"],
-          dwell_ms: dwell_ms
-        })
-        Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
-        [e | events]
+
+        if dwell_ms > 2000 do
+          e = build_event(state, :section_change, %{
+            detail: "Moved to #{new_behavior["currentSection"]} (spent #{div(dwell_ms, 1000)}s on #{old["currentSection"]})",
+            from: old["currentSection"],
+            to: new_behavior["currentSection"],
+            dwell_ms: dwell_ms
+          })
+          Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
+          [e | events]
+        else
+          # Still trigger director but don't clutter the event log
+          events
+        end
       else
         events
       end
