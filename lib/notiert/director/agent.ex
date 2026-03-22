@@ -176,7 +176,7 @@ defmodule Notiert.Director.Agent do
     api_key = Application.get_env(:notiert, :anthropic_api_key)
 
     if is_nil(api_key) or api_key == "" do
-      Logger.warning("No ANTHROPIC_API_KEY configured, director disabled")
+      Logger.warning("[director] No ANTHROPIC_API_KEY set — director is disabled. Set it via: fly secrets set ANTHROPIC_API_KEY=sk-ant-...")
       {:ok, [%{"tool" => "do_nothing", "reason" => "no API key"}]}
     else
       do_call(api_key, context)
@@ -234,12 +234,21 @@ defmodule Notiert.Director.Agent do
 
       {:ok, {{_, status, _}, _resp_headers, resp_body}} ->
         duration = System.monotonic_time(:millisecond) - start_time
-        Logger.error("[director] API error #{status} after #{duration}ms: #{resp_body}")
+        Logger.error("[director] Anthropic API returned HTTP #{status} after #{duration}ms. Response: #{resp_body}")
+
+        if status == 401 do
+          Logger.error("[director] HTTP 401 means the API key is invalid or expired. Check ANTHROPIC_API_KEY.")
+        end
+
+        if status == 429 do
+          Logger.error("[director] HTTP 429 means rate limited. Too many requests or billing limit reached.")
+        end
+
         {:error, {:api_error, status}}
 
       {:error, reason} ->
         duration = System.monotonic_time(:millisecond) - start_time
-        Logger.error("[director] Request failed after #{duration}ms: #{inspect(reason)}")
+        Logger.error("[director] Could not reach Anthropic API after #{duration}ms: #{inspect(reason)}. Check network/DNS.")
         {:error, reason}
     end
   end

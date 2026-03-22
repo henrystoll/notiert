@@ -84,7 +84,23 @@ defmodule Notiert.Director.Session do
 
   @impl true
   def handle_cast({:fingerprint, fingerprint}, state) do
-    Logger.info("[session:#{state.session_id}] Fingerprint received: #{inspect(fingerprint, pretty: true, limit: :infinity)}")
+    ua = fingerprint["userAgent"] || "unknown"
+    screen = "#{fingerprint["screenWidth"]}x#{fingerprint["screenHeight"]}"
+    tz = fingerprint["timezone"] || "unknown"
+    dnt = fingerprint["doNotTrack"] || "not set"
+    touch = fingerprint["maxTouchPoints"] || 0
+    device_type = if touch > 0, do: "touch device (#{touch} points)", else: "desktop"
+
+    Logger.info("""
+    [session:#{state.session_id}] New visitor identified:
+      Browser: #{String.slice(ua, 0..80)}
+      Screen: #{screen} @ #{fingerprint["pixelRatio"] || "?"}x (#{device_type})
+      Timezone: #{tz}, local time: #{fingerprint["localHour"]}:00 #{fingerprint["dayOfWeek"] || ""}
+      Do Not Track: #{dnt}
+      Referrer: #{fingerprint["referrer"] || "direct"}
+      Connection: #{fingerprint["connectionType"] || "unknown"} (#{fingerprint["connectionDownlink"] || "?"}Mbps)
+      Dark mode: #{fingerprint["darkMode"]}, Reduced motion: #{fingerprint["reducedMotion"]}
+    """)
 
     event = build_event(state, :fingerprint, %{data: fingerprint})
     Logger.info("[session:#{state.session_id}] [event_log] #{format_event(event)}")
@@ -106,7 +122,12 @@ defmodule Notiert.Director.Session do
 
   @impl true
   def handle_cast({:permission, permission, result, data}, state) do
-    Logger.info("[session:#{state.session_id}] Permission #{permission}: #{result}, data=#{inspect(data)}")
+    extra = case {permission, result} do
+      {"geolocation", "granted"} -> " (lat=#{data["latitude"]}, lng=#{data["longitude"]})"
+      {"microphone", "granted"} -> " (noise_level=#{data["noise_level"]})"
+      _ -> ""
+    end
+    Logger.info("[session:#{state.session_id}] Visitor #{result} #{permission} permission#{extra}")
 
     event = build_event(state, :permission, %{permission: permission, result: result, data: data})
     Logger.info("[session:#{state.session_id}] [event_log] #{format_event(event)}")
@@ -165,7 +186,14 @@ defmodule Notiert.Director.Session do
 
   @impl true
   def handle_info({:director_response, {:error, reason}}, state) do
-    Logger.warning("[session:#{state.session_id}] Director API error: #{inspect(reason)}")
+    case reason do
+      {:api_error, status} ->
+        Logger.warning("[session:#{state.session_id}] Anthropic API returned HTTP #{status} — director skipping this tick. Check API key and billing.")
+      {:json_decode, _} ->
+        Logger.warning("[session:#{state.session_id}] Failed to parse Anthropic API response — director skipping this tick. The API may be having issues.")
+      _ ->
+        Logger.warning("[session:#{state.session_id}] Director API call failed: #{inspect(reason)} — skipping this tick. Check network connectivity.")
+    end
     schedule_tick(state)
     {:noreply, %{state | busy: false}}
   end
