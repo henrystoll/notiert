@@ -4,8 +4,11 @@ defmodule Notiert.Director.Tools do
   and the LLM returns `tool_use` content blocks that get executed against the DOM.
   """
 
+  alias Notiert.Director.Phase
+
   def definitions do
     [
+      change_phase(),
       rewrite_section(),
       adjust_visual(),
       show_ghost_cursor(),
@@ -13,6 +16,32 @@ defmodule Notiert.Director.Tools do
       request_browser_permission(),
       do_nothing()
     ]
+  end
+
+  defp change_phase do
+    phase_ids = Phase.valid_ids() |> Enum.map(&to_string/1)
+
+    %{
+      "name" => "change_phase",
+      "description" =>
+        "Transition the session to a different phase. You control the narrative arc — move to the next phase when the moment is right, or skip ahead or pull back based on how the visitor is responding. Phase changes affect what UI elements are visible (toolbar, ghost viewer) and set the tone for your subsequent actions. Read the phase guidance carefully before transitioning.",
+      "input_schema" => %{
+        "type" => "object",
+        "properties" => %{
+          "phase" => %{
+            "type" => "string",
+            "enum" => phase_ids,
+            "description" => "The phase to transition to."
+          },
+          "reason" => %{
+            "type" => "string",
+            "description" =>
+              "Why you're changing phase now. What did you observe that makes this the right moment?"
+          }
+        },
+        "required" => ["phase", "reason"]
+      }
+    }
   end
 
   defp rewrite_section do
@@ -137,14 +166,15 @@ defmodule Notiert.Director.Tools do
     %{
       "name" => "request_browser_permission",
       "description" =>
-        "Trigger a browser permission dialog. For now only geolocation is supported. A CV asking for location is inherently absurd — that's the joke.",
+        "Trigger a browser permission dialog. A CV website asking for these is inherently absurd — that's the joke. Geolocation is the gentlest escalation; camera and microphone are the ultimate punchline and should only be used deep into the Climax phase after significant buildup. Never lead with the heavy ones.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
           "permission" => %{
             "type" => "string",
-            "enum" => ["geolocation"],
-            "description" => "What to request from the browser"
+            "enum" => ["geolocation", "camera", "microphone", "notifications"],
+            "description" =>
+              "What to request. Geolocation first. Camera/microphone only in Climax phase after 2+ minutes. Notifications as a farewell gag."
           },
           "pre_request_content" => %{
             "type" => "string",

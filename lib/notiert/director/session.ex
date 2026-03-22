@@ -3,6 +3,10 @@ defmodule Notiert.Director.Session do
   Per-visitor session process. Holds all fingerprint, behavior, and director state.
   Runs the director loop server-side, pushing actions to the LiveView.
   Dies when the visitor disconnects.
+
+  The director is always in the driver's seat: it controls phase transitions,
+  decides when to act, and chooses its own pacing. This process just fires
+  ticks, feeds context, and executes returned tool calls.
   """
   use GenServer
 
@@ -11,7 +15,6 @@ defmodule Notiert.Director.Session do
   alias Notiert.Director.{Agent, Phase}
 
   @idle_interval 15_000
-  @unfocused_interval 20_000
 
   # --- Public API ---
 
@@ -64,7 +67,11 @@ defmodule Notiert.Director.Session do
       # Types: :action, :observation, :phase_change, :permission, :fingerprint
       # Structured for future DB persistence.
       event_log: [],
-      busy: false
+      busy: false,
+      # Track whether visitor is focused — ticks pause entirely when not focused
+      visitor_focused: true,
+      # Track whether ticks are currently paused (unfocused)
+      paused: false
     }
 
     Logger.info("[session:#{session_id}] Started, first tick in 3s")
@@ -90,6 +97,9 @@ defmodule Notiert.Director.Session do
     # Log notable behavioral changes as observations (not every 2s update)
     state = maybe_log_behavior_observation(state, behavior)
 
+    # Detect focus changes — pause/resume ticks
+    state = handle_focus_change(state, behavior)
+
     Logger.debug("[session:#{state.session_id}] Behavior update: attention=#{behavior["attentionPattern"]}, section=#{behavior["currentSection"]}, idle=#{behavior["idleSeconds"]}s, focused=#{behavior["viewportFocused"]}")
     {:noreply, %{state | behavior: behavior}}
   end
@@ -107,6 +117,14 @@ defmodule Notiert.Director.Session do
   end
 
   @impl true
+  def handle_info(:director_tick, %{paused: true} = state) do
+    # Visitor is not looking — don't tick, don't schedule another.
+    # We'll resume when they come back (handle_focus_change).
+    Logger.debug("[session:#{state.session_id}] Tick suppressed (visitor not focused)")
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_info(:director_tick, %{busy: true} = state) do
     Logger.debug("[session:#{state.session_id}] Tick #{state.tick} skipped (busy)")
     schedule_tick(state)
@@ -115,7 +133,6 @@ defmodule Notiert.Director.Session do
 
   @impl true
   def handle_info(:director_tick, state) do
-    state = update_phase(state)
     elapsed_s = div(System.monotonic_time(:millisecond) - state.started_at, 1000)
 
     Logger.info("[session:#{state.session_id}] Tick #{state.tick} firing (phase=#{Phase.label(state.phase)}, elapsed=#{elapsed_s}s)")
@@ -137,27 +154,7 @@ defmodule Notiert.Director.Session do
 
     state =
       Enum.reduce(actions, state, fn action, acc ->
-        Logger.info("[session:#{acc.session_id}] Executing: #{summarize_action(action)}")
-
-        # Send action to LiveView
-        send(acc.live_view_pid, {:director_action, action})
-
-        # Record full action in event log (preserves all fields for DB)
-        event = build_event(acc, :action, %{
-          tool: action["tool"],
-          params: action,
-          summary: summarize_action(action)
-        })
-        Logger.info("[session:#{acc.session_id}] [event_log] #{format_event(event)}")
-
-        mutations =
-          if action["tool"] == "rewrite_section" do
-            Map.put(acc.mutations, action["section_id"], action["content"])
-          else
-            acc.mutations
-          end
-
-        %{acc | event_log: acc.event_log ++ [event], mutations: mutations}
+        execute_action(action, acc)
       end)
 
     interval = compute_interval(state)
@@ -200,49 +197,112 @@ defmodule Notiert.Director.Session do
   @impl true
   def handle_info(_msg, state), do: {:noreply, state}
 
-  # --- Private ---
+  # --- Action execution ---
 
-  defp update_phase(state) do
-    elapsed = System.monotonic_time(:millisecond) - state.started_at
-    new_phase = Phase.for_elapsed(elapsed).id
+  defp execute_action(%{"tool" => "change_phase"} = action, state) do
+    new_phase = String.to_existing_atom(action["phase"])
+    reason = action["reason"] || ""
 
-    if new_phase != state.phase do
-      Logger.info("[session:#{state.session_id}] Phase transition: #{Phase.label(state.phase)} -> #{Phase.label(new_phase)}")
+    if Phase.valid?(new_phase) and new_phase != state.phase do
+      Logger.info("[session:#{state.session_id}] Phase change: #{Phase.label(state.phase)} -> #{Phase.label(new_phase)} (#{reason})")
       send(state.live_view_pid, {:phase_change, new_phase})
 
-      event = build_event(state, :phase_change, %{from: state.phase, to: new_phase})
+      event = build_event(state, :phase_change, %{from: state.phase, to: new_phase, reason: reason})
       Logger.info("[session:#{state.session_id}] [event_log] #{format_event(event)}")
-      %{state | phase: new_phase, event_log: state.event_log ++ [event]}
+
+      # Also log as action for the notebook
+      action_event = build_event(state, :action, %{
+        tool: "change_phase",
+        params: action,
+        summary: "change_phase(#{Phase.label(new_phase)}, #{reason})"
+      })
+      Logger.info("[session:#{state.session_id}] [event_log] #{format_event(action_event)}")
+
+      %{state | phase: new_phase, event_log: state.event_log ++ [event, action_event]}
     else
-      %{state | phase: new_phase}
+      Logger.debug("[session:#{state.session_id}] Phase change ignored (already #{Phase.label(state.phase)} or invalid)")
+      state
     end
   end
 
+  defp execute_action(action, state) do
+    Logger.info("[session:#{state.session_id}] Executing: #{summarize_action(action)}")
+
+    # Send action to LiveView
+    send(state.live_view_pid, {:director_action, action})
+
+    # Record full action in event log (preserves all fields for DB)
+    event = build_event(state, :action, %{
+      tool: action["tool"],
+      params: action,
+      summary: summarize_action(action)
+    })
+    Logger.info("[session:#{state.session_id}] [event_log] #{format_event(event)}")
+
+    mutations =
+      if action["tool"] == "rewrite_section" do
+        Map.put(state.mutations, action["section_id"], action["content"])
+      else
+        state.mutations
+      end
+
+    %{state | event_log: state.event_log ++ [event], mutations: mutations}
+  end
+
+  # --- Focus handling ---
+
+  defp handle_focus_change(state, new_behavior) do
+    was_focused = state.visitor_focused
+    now_focused = new_behavior["viewportFocused"] != false
+
+    cond do
+      was_focused and not now_focused ->
+        Logger.info("[session:#{state.session_id}] Visitor lost focus — pausing director ticks")
+        %{state | visitor_focused: false, paused: true}
+
+      not was_focused and now_focused ->
+        Logger.info("[session:#{state.session_id}] Visitor returned — resuming director ticks")
+        # Schedule a tick to resume the loop
+        Process.send_after(self(), :director_tick, 1_000)
+        %{state | visitor_focused: true, paused: false}
+
+      true ->
+        state
+    end
+  end
+
+  # --- Scheduling ---
+
   defp schedule_tick(state) do
-    interval = compute_interval(state)
-    Process.send_after(self(), :director_tick, interval)
+    if state.paused do
+      Logger.debug("[session:#{state.session_id}] Not scheduling tick (paused)")
+    else
+      interval = compute_interval(state)
+      Process.send_after(self(), :director_tick, interval)
+    end
   end
 
   defp compute_interval(state) do
     base = Phase.tick_interval(state.phase)
 
-    idle_seconds = get_in(state.behavior, ["idle_seconds"]) || 0
-    focused = get_in(state.behavior, ["viewport_focused"])
+    idle_seconds = get_in(state.behavior, ["idleSeconds"]) || 0
 
-    cond do
-      focused == false -> @unfocused_interval
-      idle_seconds > 15 -> @idle_interval
-      true -> base
+    if idle_seconds > 15 do
+      @idle_interval
+    else
+      base
     end
   end
 
   defp build_context(state) do
     elapsed_ms = System.monotonic_time(:millisecond) - state.started_at
+    suggested_phase = Phase.suggested_for_elapsed(elapsed_ms)
 
     %{
       elapsed_seconds: div(elapsed_ms, 1000),
       tick: state.tick,
       phase: state.phase,
+      suggested_phase: suggested_phase,
       fingerprint: state.fingerprint,
       behavior: state.behavior,
       permissions: state.permissions,
@@ -274,7 +334,8 @@ defmodule Notiert.Director.Session do
   end
 
   defp format_event(%{type: :phase_change} = e) do
-    "t=#{e.elapsed_s}s tick=#{e.tick} PHASE #{Phase.label(e.from)}->#{Phase.label(e.to)}"
+    reason = if e[:reason] && e[:reason] != "", do: " (#{e[:reason]})", else: ""
+    "t=#{e.elapsed_s}s tick=#{e.tick} PHASE #{Phase.label(e.from)}->#{Phase.label(e.to)}#{reason}"
   end
 
   defp format_event(%{type: :permission} = e) do
@@ -371,6 +432,10 @@ defmodule Notiert.Director.Session do
   end
 
   defp merge_enrichment(enrichment, _permission, _result, _data), do: enrichment
+
+  defp summarize_action(%{"tool" => "change_phase"} = a) do
+    "change_phase(#{a["phase"]}, #{a["reason"] || ""})"
+  end
 
   defp summarize_action(%{"tool" => "rewrite_section"} = a) do
     "rewrite_section(#{a["section_id"]}, #{String.slice(a["content"] || "", 0..40)}...)"

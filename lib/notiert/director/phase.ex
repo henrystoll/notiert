@@ -1,7 +1,8 @@
 defmodule Notiert.Director.Phase do
   @moduledoc """
   Named phases for the director's narrative arc.
-  Each phase defines its name, time threshold, tick interval, and guidance prompt.
+  The director controls phase transitions — these are not automatic.
+  Each phase defines its character, tick interval, and guidance.
   Add, remove, or reorder phases here — everything else references this module.
   """
 
@@ -9,58 +10,75 @@ defmodule Notiert.Director.Phase do
     %{
       id: :silent,
       label: "Silent",
-      threshold_ms: 0,
       tick_interval_ms: 8_000,
-      guidance:
-        "SILENT: You are invisible. Collect data. Use do_nothing or imperceptible adjust_visual only. Do NOT rewrite content, show cursors, or add notes. The visitor must believe this is a normal website."
+      guidance: """
+      SILENT: You are invisible. The page is a normal CV. Use do_nothing or imperceptible
+      adjust_visual only (shift a color by 1-2 points, nudge letter-spacing by 0.01em).
+      Do NOT rewrite content, show cursors, or add notes. The visitor must believe this is
+      a completely normal website. You are gathering intelligence. Be patient.
+      """
     },
     %{
       id: :subtle,
       label: "Subtle",
-      threshold_ms: 10_000,
       tick_interval_ms: 7_000,
-      guidance:
-        "SUBTLE: Micro adjustments only. The visitor should feel something is slightly off but not be sure. One margin note maximum, and it should look like a normal document comment. No rewrites, no ghost cursor, no permissions."
+      guidance: """
+      SUBTLE: Micro adjustments only. The visitor should feel something is slightly off but
+      not be sure. You may add one margin note that looks like a normal document comment —
+      something plausible, not surveillance-y. No rewrites, no ghost cursor, no permissions.
+      The uncanny valley of web design.
+      """
     },
     %{
       id: :suspicious,
       label: "Suspicious",
-      threshold_ms: 25_000,
       tick_interval_ms: 7_000,
-      guidance:
-        "SUSPICIOUS: The toolbar is now visible. You can show the ghost cursor, add knowing margin notes, and do your first section rewrite. The visitor should start questioning whether the page is normal. Don't explain — let them figure it out. Keep it slow — one change per cycle maximum."
+      guidance: """
+      SUSPICIOUS: The toolbar is now visible. You can show the ghost cursor, add knowing
+      margin notes, and do your first section rewrite. The visitor should start questioning
+      whether the page is normal. Don't explain what's happening — let them figure it out.
+      One change per cycle maximum. The reveal is more powerful when they discover it themselves.
+      """
     },
     %{
       id: :overt,
       label: "Overt",
-      threshold_ms: 50_000,
       tick_interval_ms: 8_000,
-      guidance:
-        "OVERT: Drop the pretense. Rewrite sections with direct references to collected data. Request geolocation. Comment on their Do Not Track header, browser, screen size, reading patterns. The visitor knows the page is watching — make it entertaining. Still only one action per cycle."
+      guidance: """
+      OVERT: Drop the pretense. Rewrite sections weaving in collected data — their browser,
+      timezone, screen size, reading patterns. Request geolocation if the moment feels right.
+      Comment on their Do Not Track header if set. The visitor knows the page is watching them.
+      Make it entertaining, not threatening. One action per cycle — let each land.
+      """
     },
     %{
       id: :climax,
       label: "The Climax",
-      threshold_ms: 90_000,
       tick_interval_ms: 10_000,
-      guidance:
-        "THE CLIMAX: Your artistic peak. Be bold but measured. If they've been here this long, they're in on it. Reference what you've learned. Build to a satisfying conclusion. One action per cycle — make each one count."
+      guidance: """
+      THE CLIMAX: Your artistic peak. If they've been here this long, they're in on it.
+      Reference everything you've learned. Camera and microphone requests are available now
+      but use them only if the narrative calls for it — the joke is that a CV is asking.
+      Build to a satisfying conclusion. Make each action count. End on a note that makes them
+      want to work with Henry, not run away.
+      """
     }
   ]
+
+  @phase_ids Enum.map(@phases, & &1.id)
 
   @doc "All phases in order."
   def all, do: @phases
 
+  @doc "List of valid phase ids."
+  def valid_ids, do: @phase_ids
+
+  @doc "Is this a valid phase id?"
+  def valid?(id), do: id in @phase_ids
+
   @doc "Look up a phase definition by id."
   def get(id) do
     Enum.find(@phases, fn p -> p.id == id end)
-  end
-
-  @doc "Determine which phase applies for a given elapsed time in ms."
-  def for_elapsed(elapsed_ms) do
-    @phases
-    |> Enum.reverse()
-    |> Enum.find(List.first(@phases), fn p -> elapsed_ms >= p.threshold_ms end)
   end
 
   @doc "Get the tick interval for a phase id."
@@ -92,4 +110,18 @@ defmodule Notiert.Director.Phase do
 
   @doc "Should the ghost viewer avatar be visible?"
   def ghost_viewer_visible?(phase_id), do: phase_id in [:overt, :climax]
+
+  @doc """
+  Suggest a phase based on elapsed time. Used only in the prompt as a hint —
+  the director is free to ignore this and move at its own pace.
+  """
+  def suggested_for_elapsed(elapsed_ms) do
+    cond do
+      elapsed_ms < 10_000 -> :silent
+      elapsed_ms < 25_000 -> :subtle
+      elapsed_ms < 50_000 -> :suspicious
+      elapsed_ms < 90_000 -> :overt
+      true -> :climax
+    end
+  end
 end
