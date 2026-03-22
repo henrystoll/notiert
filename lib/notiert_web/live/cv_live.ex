@@ -7,7 +7,7 @@ defmodule NotiertWeb.CvLive do
   """
   use NotiertWeb, :live_view
 
-  alias Notiert.Director.Session
+  alias Notiert.Director.{Session, Phase}
 
   @impl true
   def mount(params, _session, socket) do
@@ -17,7 +17,7 @@ defmodule NotiertWeb.CvLive do
       socket
       |> assign(
         debug: debug?,
-        phase: 0,
+        phase: :silent,
         session_id: nil,
         # CV section content - original values
         sections: default_sections(),
@@ -182,15 +182,12 @@ defmodule NotiertWeb.CvLive do
 
   defp apply_director_action(_unknown, socket), do: socket
 
-  defp maybe_show_toolbar(socket, phase) when phase >= 2 do
+  defp maybe_show_toolbar(socket, phase) do
     socket
-    |> assign(toolbar_visible: true, viewer_you_visible: true)
-    |> then(fn s ->
-      if phase >= 3, do: assign(s, viewer_ghost_visible: true), else: s
-    end)
+    |> assign(toolbar_visible: Phase.toolbar_visible?(phase))
+    |> assign(viewer_you_visible: Phase.toolbar_visible?(phase))
+    |> assign(viewer_ghost_visible: Phase.ghost_viewer_visible?(phase))
   end
-
-  defp maybe_show_toolbar(socket, _phase), do: socket
 
   defp generate_session_id do
     :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)

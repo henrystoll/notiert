@@ -6,6 +6,8 @@ defmodule Notiert.Director.Agent do
 
   require Logger
 
+  alias Notiert.Director.Phase
+
   @anthropic_url "https://api.anthropic.com/v1/messages"
   @model "claude-sonnet-4-20250514"
   @max_tokens 1024
@@ -16,7 +18,7 @@ defmodule Notiert.Director.Agent do
   You are orchestrating a real-time performance for a single visitor. Your medium is a web page. Your tools let you rewrite content, adjust visual design, show a ghost cursor, and add margin notes.
 
   ARTISTIC DIRECTION:
-  - Start silent. Phase 0 should be do_nothing or nearly invisible visual tweaks. Build tension through restraint.
+  - Start silent. In the Silent phase, use do_nothing or nearly invisible visual tweaks. Build tension through restraint.
   - Your humor is dry, knowing, European. Never cruel, but comfortable making the visitor slightly uncomfortable. You are amused by the absurdity of browser surveillance, not angry about it.
   - Every action should serve the narrative arc: normalcy -> suspicion -> awareness -> confrontation -> reflection.
   - The best jokes land because of timing, not volume. A single perfectly placed margin note is better than rewriting three sections at once.
@@ -64,7 +66,7 @@ defmodule Notiert.Director.Agent do
     prompt = build_prompt(context)
 
     Logger.info("""
-    [director] === PROMPT (tick=#{context.tick}, phase=#{context.phase}, elapsed=#{context.elapsed_seconds}s) ===
+    [director] === PROMPT (tick=#{context.tick}, phase=#{Phase.label(context.phase)}, elapsed=#{context.elapsed_seconds}s) ===
     #{prompt}
     [director] === END PROMPT ===
     """)
@@ -154,10 +156,10 @@ defmodule Notiert.Director.Agent do
   end
 
   defp build_prompt(context) do
-    phase_guidance = phase_guidance(context.phase)
+    phase_guidance = Phase.guidance(context.phase)
 
     """
-    CURRENT STATE (#{context.elapsed_seconds}s into visit, tick #{context.tick}, phase #{context.phase})
+    CURRENT STATE (#{context.elapsed_seconds}s into visit, tick #{context.tick}, phase: #{Phase.label(context.phase)})
     ==================================================================================
 
     WHAT WE KNOW ABOUT THIS VISITOR:
@@ -331,7 +333,7 @@ defmodule Notiert.Director.Agent do
           "  [#{ts}] Collected visitor fingerprint."
 
         :phase_change ->
-          "  [#{ts}] — Phase #{event.from} → #{event.to} —"
+          "  [#{ts}] — Phase changed: #{Phase.label(event.from)} → #{Phase.label(event.to)} —"
 
         :permission ->
           "  [#{ts}] Asked for #{event.permission} → visitor #{event.result}."
@@ -385,23 +387,4 @@ defmodule Notiert.Director.Agent do
     "  [#{ts}] #{event.summary}"
   end
 
-  defp phase_guidance(0) do
-    "Phase 0: SILENT. You are invisible. Collect data. Use do_nothing or imperceptible adjust_visual only. Do NOT rewrite content, show cursors, or add notes. The visitor must believe this is a normal website."
-  end
-
-  defp phase_guidance(1) do
-    "Phase 1: SUBTLE. Micro adjustments only. The visitor should feel something is slightly off but not be sure. One margin note maximum, and it should look like a normal document comment. No rewrites, no ghost cursor, no permissions."
-  end
-
-  defp phase_guidance(2) do
-    "Phase 2: SUSPICIOUS. The toolbar is now visible. You can show the ghost cursor, add knowing margin notes, and do your first section rewrite. The visitor should start questioning whether the page is normal. Don't explain — let them figure it out. Keep it slow — one change per cycle maximum."
-  end
-
-  defp phase_guidance(3) do
-    "Phase 3: OVERT. Drop the pretense. Rewrite sections with direct references to collected data. Request geolocation. Comment on their Do Not Track header, browser, screen size, reading patterns. The visitor knows the page is watching — make it entertaining. Still only one action per cycle."
-  end
-
-  defp phase_guidance(4) do
-    "Phase 4: THE CLIMAX. Your artistic peak. Be bold but measured. If they've been here this long, they're in on it. Reference what you've learned. Build to a satisfying conclusion. One action per cycle — make each one count."
-  end
 end

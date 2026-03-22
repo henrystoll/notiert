@@ -8,24 +8,7 @@ defmodule Notiert.Director.Session do
 
   require Logger
 
-  alias Notiert.Director.Agent
-
-  @phase_thresholds [
-    {0, 0},
-    {1, 10_000},
-    {2, 25_000},
-    {3, 50_000},
-    {4, 90_000}
-  ]
-
-  # Tick intervals per phase (ms) - slower pacing as requested
-  @tick_intervals %{
-    0 => 8_000,
-    1 => 7_000,
-    2 => 7_000,
-    3 => 8_000,
-    4 => 10_000
-  }
+  alias Notiert.Director.{Agent, Phase}
 
   @idle_interval 15_000
   @unfocused_interval 20_000
@@ -65,7 +48,7 @@ defmodule Notiert.Director.Session do
       live_view_pid: pid,
       started_at: now,
       tick: 0,
-      phase: 0,
+      phase: :silent,
       fingerprint: %{},
       behavior: %{},
       permissions: %{
@@ -135,7 +118,7 @@ defmodule Notiert.Director.Session do
     state = update_phase(state)
     elapsed_s = div(System.monotonic_time(:millisecond) - state.started_at, 1000)
 
-    Logger.info("[session:#{state.session_id}] Tick #{state.tick} firing (phase=#{state.phase}, elapsed=#{elapsed_s}s)")
+    Logger.info("[session:#{state.session_id}] Tick #{state.tick} firing (phase=#{Phase.label(state.phase)}, elapsed=#{elapsed_s}s)")
 
     # Run director call async to not block the process
     parent = self()
@@ -203,7 +186,7 @@ defmodule Notiert.Director.Session do
       Actions: #{action_count}
       Observations: #{observation_count}
       Total events: #{length(state.event_log)}
-      Final phase: #{state.phase}
+      Final phase: #{Phase.label(state.phase)}
       Mutations: #{inspect(Map.keys(state.mutations))}
     [session:#{state.session_id}] === FULL EVENT LOG ===
     #{state.event_log |> Enum.map(&format_event/1) |> Enum.join("\n")}
@@ -221,16 +204,10 @@ defmodule Notiert.Director.Session do
 
   defp update_phase(state) do
     elapsed = System.monotonic_time(:millisecond) - state.started_at
-
-    new_phase =
-      @phase_thresholds
-      |> Enum.reverse()
-      |> Enum.find_value(0, fn {phase, threshold} ->
-        if elapsed >= threshold, do: phase
-      end)
+    new_phase = Phase.for_elapsed(elapsed).id
 
     if new_phase != state.phase do
-      Logger.info("[session:#{state.session_id}] Phase transition: #{state.phase} -> #{new_phase}")
+      Logger.info("[session:#{state.session_id}] Phase transition: #{Phase.label(state.phase)} -> #{Phase.label(new_phase)}")
       send(state.live_view_pid, {:phase_change, new_phase})
 
       event = build_event(state, :phase_change, %{from: state.phase, to: new_phase})
@@ -247,7 +224,7 @@ defmodule Notiert.Director.Session do
   end
 
   defp compute_interval(state) do
-    base = Map.get(@tick_intervals, state.phase, 8_000)
+    base = Phase.tick_interval(state.phase)
 
     idle_seconds = get_in(state.behavior, ["idle_seconds"]) || 0
     focused = get_in(state.behavior, ["viewport_focused"])
@@ -297,7 +274,7 @@ defmodule Notiert.Director.Session do
   end
 
   defp format_event(%{type: :phase_change} = e) do
-    "t=#{e.elapsed_s}s tick=#{e.tick} PHASE #{e.from}->#{e.to}"
+    "t=#{e.elapsed_s}s tick=#{e.tick} PHASE #{Phase.label(e.from)}->#{Phase.label(e.to)}"
   end
 
   defp format_event(%{type: :permission} = e) do
