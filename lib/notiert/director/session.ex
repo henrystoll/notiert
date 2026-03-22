@@ -178,6 +178,9 @@ defmodule Notiert.Director.Session do
         execute_action(action, acc)
       end)
 
+    # Send updated event log to LiveView for the reveal section
+    send(state.live_view_pid, {:event_log_update, state.event_log})
+
     interval = compute_interval(state)
     Logger.debug("[session:#{state.session_id}] Next tick in #{interval}ms (#{length(state.event_log)} events in log)")
     schedule_tick(state)
