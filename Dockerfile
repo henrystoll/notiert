@@ -12,7 +12,7 @@ RUN mix local.hex --force && mix local.rebar --force
 ENV MIX_ENV=prod
 
 # Install dependencies
-COPY mix.exs mix.lock ./
+COPY mix.exs ./
 COPY config ./config
 RUN mix deps.get --only prod
 RUN mix deps.compile
