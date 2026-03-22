@@ -63,6 +63,11 @@ defmodule Notiert.Director.Tools do
             "description" =>
               "The replacement text. Keep it short — one sentence or a brief phrase. Should read as genuine CV content, not meta-commentary. Weave in visitor context naturally."
           },
+          "reason" => %{
+            "type" => "string",
+            "description" =>
+              "Why you're making this edit. What signal triggered it? (e.g. 'visitor dwelling on experience, sharpening for their timezone'). This is logged for session analysis."
+          },
           "tone" => %{
             "type" => "string",
             "enum" => ["subtle", "knowing", "overt", "absurd"],
@@ -76,7 +81,7 @@ defmodule Notiert.Director.Tools do
               "Character typing speed. Slow for dramatic reveals, frantic for comedic urgency."
           }
         },
-        "required" => ["section_id", "content"]
+        "required" => ["section_id", "content", "reason"]
       }
     }
   end
@@ -101,9 +106,14 @@ defmodule Notiert.Director.Tools do
           "target" => %{
             "type" => "string",
             "description" => "'global' to set on :root, or a section_id to scope changes to one section"
+          },
+          "reason" => %{
+            "type" => "string",
+            "description" =>
+              "Why you chose these values. What about the visitor informed this choice? (e.g. 'Danish timezone — shifting accent to Danish red #c8102e', 'dark mode user — warming secondary text for night reading'). Logged for session analysis."
           }
         },
-        "required" => ["css_variables"]
+        "required" => ["css_variables", "reason"]
       }
     }
   end
@@ -151,9 +161,14 @@ defmodule Notiert.Director.Tools do
             "type" => "string",
             "description" =>
               "Who the comment appears to be from (e.g. 'notiert', 'Henry Stoll')"
+          },
+          "reason" => %{
+            "type" => "string",
+            "description" =>
+              "Why you're adding this note now. What prompted it? Logged for session analysis."
           }
         },
-        "required" => ["anchor_section", "content"]
+        "required" => ["anchor_section", "content", "reason"]
       }
     }
   end
@@ -197,9 +212,14 @@ defmodule Notiert.Director.Tools do
           "target_section" => %{
             "type" => "string",
             "description" => "Section to attach the pre-request margin note to"
+          },
+          "reason" => %{
+            "type" => "string",
+            "description" =>
+              "Why you're requesting this permission now. What's the narrative payoff? Logged for session analysis."
           }
         },
-        "required" => ["permission", "target_section"]
+        "required" => ["permission", "target_section", "reason"]
       }
     }
   end

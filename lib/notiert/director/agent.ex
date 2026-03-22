@@ -543,19 +543,22 @@ defmodule Notiert.Director.Agent do
   defp format_entry(%{type: :action, tool: "rewrite_section"} = e) do
     section = e[:params]["section_id"]
     content = e[:params]["content"] || ""
-    "  [#{e.elapsed_s}s] DIRECTOR edited #{section}: \"#{content}\""
+    reason = if e[:params]["reason"], do: " — #{e[:params]["reason"]}", else: ""
+    "  [#{e.elapsed_s}s] DIRECTOR edited #{section}: \"#{content}\"#{reason}"
   end
 
   defp format_entry(%{type: :action, tool: "add_margin_note"} = e) do
     section = e[:params]["anchor_section"]
     content = e[:params]["content"] || ""
-    "  [#{e.elapsed_s}s] DIRECTOR noted on #{section}: \"#{content}\""
+    reason = if e[:params]["reason"], do: " — #{e[:params]["reason"]}", else: ""
+    "  [#{e.elapsed_s}s] DIRECTOR noted on #{section}: \"#{content}\"#{reason}"
   end
 
   defp format_entry(%{type: :action, tool: "adjust_visual"} = e) do
     vars = e[:params]["css_variables"] || %{}
     changes = Enum.map_join(vars, ", ", fn {k, v} -> "#{k}=#{v}" end)
-    "  [#{e.elapsed_s}s] DIRECTOR adjusted visuals: #{changes}"
+    reason = if e[:params]["reason"], do: " — #{e[:params]["reason"]}", else: ""
+    "  [#{e.elapsed_s}s] DIRECTOR adjusted visuals: #{changes}#{reason}"
   end
 
   defp format_entry(%{type: :action, tool: "show_cursor"} = e) do
@@ -571,7 +574,8 @@ defmodule Notiert.Director.Agent do
 
   defp format_entry(%{type: :action, tool: "request_browser_permission"} = e) do
     perm = e[:params]["permission"]
-    "  [#{e.elapsed_s}s] DIRECTOR requested #{perm} (pending)"
+    reason = if e[:params]["reason"], do: " — #{e[:params]["reason"]}", else: ""
+    "  [#{e.elapsed_s}s] DIRECTOR requested #{perm}#{reason}"
   end
 
   defp format_entry(%{type: :action} = e) do
