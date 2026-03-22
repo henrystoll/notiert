@@ -18,7 +18,8 @@ if config_env() == :prod do
     server: true,
     check_origin: [
       "https://#{host}",
-      "https://www.#{host}"
+      "https://www.#{host}",
+      "https://notiert.fly.dev"
     ]
 end
 
