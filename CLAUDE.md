@@ -108,6 +108,38 @@ elixir -e 'Code.compile_file("lib/notiert/director/agent.ex")'
 - CSS: CSS custom properties for theming, mobile-first (iPhone Safari primary)
 - No Tailwind — custom clean CV aesthetic CSS
 
+## Best Practices
+
+### GenServer & Process Design
+- Every GenServer must monitor its dependent processes and clean up on `:DOWN`
+- Use `via` tuples with `Registry` for named processes — never global names
+- Cast for fire-and-forget events (fingerprint, behavior), call only when you need a reply
+- Always set timeouts or monitors — no orphan processes
+
+### Anthropic API Integration
+- One API call at a time per session (mutex pattern via `busy` flag)
+- Always handle API errors gracefully — log and continue, never crash the session
+- Keep token usage low: the director prompt is rebuilt every call, so keep state summaries concise
+- Model is configured in `Agent` — change it in one place
+
+### LiveView Patterns
+- All client→server communication goes through `pushEvent` in hooks → `handle_event` in LiveView
+- All server→client updates go through `push_event` or assigns
+- Never store large payloads in assigns — keep them in the Session GenServer
+- Use `connected?/1` guard before starting session processes
+
+### Security
+- Never log or store raw visitor IP beyond the enrichment lookup
+- Never commit API keys — use `fly secrets set` or env vars
+- Sanitize all director-generated content before rendering (XSS)
+- Rate-limit session creation at the endpoint level
+
+### Performance
+- Debounce events before triggering the director (800ms default)
+- Behavior updates are high-frequency (2s) — keep `handle_cast` fast, defer heavy work
+- CSS transitions handle animation — don't use JS timers for visual effects
+- Enrichment lookups are async and non-blocking
+
 ## Debug Mode
 Add `?debug=1` to URL to see LLM-rewritten content highlighted in red.
 
