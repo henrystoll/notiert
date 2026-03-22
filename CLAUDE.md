@@ -55,3 +55,25 @@ Add `?debug=1` to URL to see LLM-rewritten content highlighted in red.
 - The Dockerfile must build the full release (multi-stage: compile → release → minimal runtime image)
 - No manual steps required beyond `git push` — the deploy is fully automated
 - When iterating, use `fly deploy` directly from Claude Code for instant deploys without waiting for CI
+
+## Logging
+
+All director prompts, API responses, and session interactions are logged extensively. Logs are the primary way to observe and debug the director's behavior from Claude Code (since we can't see the browser).
+
+**Log prefixes:**
+- `[session:<id>]` — per-visitor session lifecycle, fingerprint receipt, behavior updates, permission results, tick firing, phase transitions, action execution, disconnect summary
+- `[director]` — full prompt sent to Anthropic API (with `=== PROMPT ===` delimiters), full API response (with `=== RESPONSE ===` delimiters), timing, errors
+
+**Log levels:**
+- `info` — prompts, responses, actions executed, fingerprint received, phase changes, session start/stop (the important stuff)
+- `debug` — behavior updates (every 2s, high volume), tick skips, next-tick scheduling
+- `warning/error` — API failures, missing API key
+
+**Reading logs in production:**
+```bash
+fly logs              # stream live
+fly logs --app notiert  # if not in project dir
+```
+
+**Reading logs in dev:**
+Logs print to stdout when running `mix phx.server`. Set `config :logger, level: :debug` in `config/dev.exs` to see behavior updates.

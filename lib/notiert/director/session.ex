@@ -6,6 +6,8 @@ defmodule Notiert.Director.Session do
   """
   use GenServer
 
+  require Logger
+
   alias Notiert.Director.Agent
 
   @phase_thresholds [
@@ -76,6 +78,8 @@ defmodule Notiert.Director.Session do
       busy: false
     }
 
+    Logger.info("[session:#{session_id}] Started, first tick in 3s")
+
     # Start the director loop after a brief delay to let fingerprint data arrive
     Process.send_after(self(), :director_tick, 3_000)
 
@@ -84,16 +88,19 @@ defmodule Notiert.Director.Session do
 
   @impl true
   def handle_cast({:fingerprint, fingerprint}, state) do
+    Logger.info("[session:#{state.session_id}] Fingerprint received: #{inspect(fingerprint, pretty: true, limit: :infinity)}")
     {:noreply, %{state | fingerprint: fingerprint}}
   end
 
   @impl true
   def handle_cast({:behavior, behavior}, state) do
+    Logger.debug("[session:#{state.session_id}] Behavior update: attention=#{behavior["attentionPattern"]}, section=#{behavior["currentSection"]}, idle=#{behavior["idleSeconds"]}s, focused=#{behavior["viewportFocused"]}")
     {:noreply, %{state | behavior: behavior}}
   end
 
   @impl true
   def handle_cast({:permission, permission, result, data}, state) do
+    Logger.info("[session:#{state.session_id}] Permission #{permission}: #{result}, data=#{inspect(data)}")
     permissions = Map.put(state.permissions, permission, result)
     enrichment = merge_enrichment(state.enrichment, permission, result, data)
     {:noreply, %{state | permissions: permissions, enrichment: enrichment}}
@@ -101,7 +108,7 @@ defmodule Notiert.Director.Session do
 
   @impl true
   def handle_info(:director_tick, %{busy: true} = state) do
-    # Skip tick if still waiting for API response
+    Logger.debug("[session:#{state.session_id}] Tick #{state.tick} skipped (busy)")
     schedule_tick(state)
     {:noreply, state}
   end
@@ -109,6 +116,9 @@ defmodule Notiert.Director.Session do
   @impl true
   def handle_info(:director_tick, state) do
     state = update_phase(state)
+    elapsed_s = div(System.monotonic_time(:millisecond) - state.started_at, 1000)
+
+    Logger.info("[session:#{state.session_id}] Tick #{state.tick} firing (phase=#{state.phase}, elapsed=#{elapsed_s}s)")
 
     # Run director call async to not block the process
     parent = self()
@@ -123,8 +133,12 @@ defmodule Notiert.Director.Session do
 
   @impl true
   def handle_info({:director_response, {:ok, actions}}, state) do
+    Logger.info("[session:#{state.session_id}] Director returned #{length(actions)} action(s)")
+
     state =
       Enum.reduce(actions, state, fn action, acc ->
+        Logger.info("[session:#{acc.session_id}] Executing: #{summarize_action(action)}")
+
         # Send action to LiveView
         send(acc.live_view_pid, {:director_action, action})
 
@@ -149,21 +163,23 @@ defmodule Notiert.Director.Session do
         }
       end)
 
+    interval = compute_interval(state)
+    Logger.debug("[session:#{state.session_id}] Next tick in #{interval}ms")
     schedule_tick(state)
     {:noreply, %{state | busy: false}}
   end
 
   @impl true
   def handle_info({:director_response, {:error, reason}}, state) do
-    require Logger
-    Logger.warning("Director API error: #{inspect(reason)}")
+    Logger.warning("[session:#{state.session_id}] Director API error: #{inspect(reason)}")
     schedule_tick(state)
     {:noreply, %{state | busy: false}}
   end
 
   @impl true
   def handle_info({:DOWN, _ref, :process, pid, _reason}, %{live_view_pid: pid} = state) do
-    # LiveView disconnected, stop this session
+    elapsed_s = div(System.monotonic_time(:millisecond) - state.started_at, 1000)
+    Logger.info("[session:#{state.session_id}] Visitor disconnected after #{elapsed_s}s, #{state.tick} ticks, #{length(state.action_history)} actions")
     {:stop, :normal, state}
   end
 
@@ -183,6 +199,7 @@ defmodule Notiert.Director.Session do
       end)
 
     if new_phase != state.phase do
+      Logger.info("[session:#{state.session_id}] Phase transition: #{state.phase} -> #{new_phase}")
       send(state.live_view_pid, {:phase_change, new_phase})
     end
 

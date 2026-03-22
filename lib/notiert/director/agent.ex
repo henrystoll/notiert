@@ -61,6 +61,14 @@ defmodule Notiert.Director.Agent do
   end
 
   defp do_call(api_key, context) do
+    prompt = build_prompt(context)
+
+    Logger.info("""
+    [director] === PROMPT (tick=#{context.tick}, phase=#{context.phase}, elapsed=#{context.elapsed_seconds}s) ===
+    #{prompt}
+    [director] === END PROMPT ===
+    """)
+
     body =
       Jason.encode!(%{
         "model" => @model,
@@ -71,7 +79,7 @@ defmodule Notiert.Director.Agent do
         "messages" => [
           %{
             "role" => "user",
-            "content" => build_prompt(context)
+            "content" => prompt
           }
         ]
       })
@@ -82,6 +90,8 @@ defmodule Notiert.Director.Agent do
       {~c"anthropic-version", ~c"2023-06-01"}
     ]
 
+    start_time = System.monotonic_time(:millisecond)
+
     case :httpc.request(
            :post,
            {~c"#{@anthropic_url}", headers, ~c"application/json", body},
@@ -89,14 +99,24 @@ defmodule Notiert.Director.Agent do
            []
          ) do
       {:ok, {{_, 200, _}, _resp_headers, resp_body}} ->
+        duration = System.monotonic_time(:millisecond) - start_time
+
+        Logger.info("""
+        [director] === RESPONSE (#{duration}ms) ===
+        #{resp_body}
+        [director] === END RESPONSE ===
+        """)
+
         parse_response(resp_body)
 
       {:ok, {{_, status, _}, _resp_headers, resp_body}} ->
-        Logger.error("Anthropic API returned #{status}: #{resp_body}")
+        duration = System.monotonic_time(:millisecond) - start_time
+        Logger.error("[director] API error #{status} after #{duration}ms: #{resp_body}")
         {:error, {:api_error, status}}
 
       {:error, reason} ->
-        Logger.error("Anthropic API request failed: #{inspect(reason)}")
+        duration = System.monotonic_time(:millisecond) - start_time
+        Logger.error("[director] Request failed after #{duration}ms: #{inspect(reason)}")
         {:error, reason}
     end
   end
