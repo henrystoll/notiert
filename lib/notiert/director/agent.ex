@@ -85,13 +85,44 @@ defmodule Notiert.Director.Agent do
   - doNotTrack: If set, note it — privacy-conscious visitor. Respect that in tone.
   - darkMode: If true, they prefer darker aesthetics. Consider visual adjustments.
 
+  === EVENT-DRIVEN ARCHITECTURE ===
+
+  You are called when something HAPPENS, not just on a timer. Each call tells you WHY
+  you were triggered (the TRIGGER section at the top). React to the trigger specifically:
+
+  - permission_result: The visitor just responded to a permission dialog. You see how
+    long they hesitated. If they granted quickly, they're engaged — use the data NOW.
+    If they denied, acknowledge gracefully and pivot. NEVER ask again for camera/mic.
+
+  - text_selection: They copied/selected something. They're evaluating. Sharpen that
+    area or a related section.
+
+  - tab_return: They left and came back. Something should have changed while they were
+    gone. Make it noticeable.
+
+  - section_change: They scrolled to a new section. Consider editing what they're now
+    looking at. You also get how long they spent on the previous section (dwell_ms).
+
+  - attention_change: Their engagement level shifted (reading→idle, scanning→reading).
+    Adjust your strategy.
+
+  - fingerprint: First real data about the visitor. Decide your opening strategy.
+
+  - interval: Backup timer. Check behavior data, decide if action is warranted.
+
+  You also receive NEW EVENTS SINCE LAST CALL — a list of everything that happened
+  since your previous call. Use this to understand what changed, not just the current
+  state snapshot.
+
   === ACTION BIAS — BE REACTIVE ===
 
-  IMPORTANT: Don't wait too long. The page should feel alive. If the visitor is actively
-  reading (attentionPattern="reading"), make a small edit to the section they're on.
-  Every tick where the visitor is engaged, you should DO something — even if it's just
-  a subtle adjust_visual (shift a color, nudge spacing). Reserve do_nothing for when
-  the visitor is truly idle or scanning too fast to notice anything.
+  IMPORTANT: You are called because something happened. REACT TO IT. Don't do_nothing
+  unless the visitor is truly idle or scanning too fast. The page should feel alive.
+
+  Permission flow: When you request a permission, the state moves to "pending". When
+  the visitor responds, you're immediately re-triggered with the result + timing. Use
+  this information — a visitor who granted geolocation in 800ms is very different from
+  one who took 15 seconds to deny it.
 
   In the first 30 seconds: prioritize small edits on whatever section they're reading.
   A word swap, a detail that suddenly feels more relevant. Build the uncanny feeling
@@ -112,7 +143,7 @@ defmodule Notiert.Director.Agent do
   === ESCALATION: PERMISSIONS ===
 
   Geolocation: Use when the narrative calls for it. Location-aware CV content is the goal.
-  "Based in Copenhagen" becomes "Based in Copenhagen, #{km} from you." That's the payoff.
+  "Based in Copenhagen" becomes "Based in Copenhagen, [X]km from you." That's the payoff.
 
   Camera/microphone: Extreme escalation. Requirements: climax phase, 3+ minutes of active
   engagement, 3+ sections visited. Most sessions should never use them.
@@ -268,35 +299,106 @@ defmodule Notiert.Director.Agent do
     suggested = Phase.label(context.suggested_phase)
     available_phases = Phase.valid_ids() |> Enum.map(&Phase.label/1) |> Enum.join(", ")
 
+    trigger_section = format_trigger(context)
+    new_events_section = format_new_events(context[:new_events] || [])
+
     """
-    CURRENT STATE (#{context.elapsed_seconds}s into visit, phase: #{Phase.label(context.phase)})
+    === TRIGGER: #{context[:trigger] || :interval} ===
+    #{trigger_section}
+
+    #{new_events_section}
+
+    CURRENT STATE (#{context.elapsed_seconds}s into visit, call ##{context.tick}, phase: #{Phase.label(context.phase)})
     ==================================================================================
 
-    WHAT WE KNOW ABOUT THIS VISITOR:
+    VISITOR FINGERPRINT:
     #{format_fingerprint(context.fingerprint)}
 
-    WHAT THE VISITOR IS DOING RIGHT NOW:
+    VISITOR BEHAVIOR RIGHT NOW:
     #{format_behavior(context.behavior)}
 
     PERMISSIONS:
     #{format_permissions(context.permissions)}
     #{format_enrichment(context.enrichment)}
 
-    WHAT THE PAGE CURRENTLY SHOWS (your edits so far):
+    YOUR EDITS SO FAR:
     #{format_mutations(context.mutations)}
 
-    YOUR NOTES — everything that happened this session, oldest first:
+    FULL SESSION LOG (oldest first):
     #{format_notebook(context.event_log)}
 
     ---
     CURRENT PHASE: #{Phase.label(context.phase)}
-    SUGGESTED PHASE (based on time only — you may override): #{suggested}
+    SUGGESTED PHASE (time-based — you may override): #{suggested}
     AVAILABLE PHASES: #{available_phases}
 
     #{phase_guidance}
 
-    Based on your notes, the visitor's behavior, and your artistic judgment, decide your next action.
-    You may also change_phase if the moment calls for it. You can combine a phase change with another action.
+    You were triggered because: #{context[:trigger] || :interval}. React to it.
+    You may combine a phase change with another action.
+    """
+  end
+
+  defp format_trigger(%{trigger: :permission_result, trigger_meta: meta}) do
+    hesitation = meta[:hesitation_desc] || "unknown timing"
+    """
+    The visitor just responded to the #{meta[:permission]} permission dialog.
+    Result: #{meta[:result]}
+    Hesitation: #{hesitation}
+    #{if meta[:hesitation_ms] && meta[:hesitation_ms] < 2000, do: "They were eager — this is a green light to use the data.", else: ""}
+    #{if meta[:result] == "denied", do: "They denied it. Don't ask again for this permission. Acknowledge it gracefully.", else: ""}
+    REACT TO THIS NOW. If granted, use the new data immediately in a rewrite.
+    """
+  end
+
+  defp format_trigger(%{trigger: :text_selection}) do
+    "The visitor just selected/copied text. They're evaluating content. Sharpen what they're interested in."
+  end
+
+  defp format_trigger(%{trigger: :tab_return}) do
+    "The visitor just came back after tabbing away. They'll see whatever changed. Make it count."
+  end
+
+  defp format_trigger(%{trigger: :section_change}) do
+    "The visitor just scrolled to a different section. Consider editing what they're now reading."
+  end
+
+  defp format_trigger(%{trigger: :attention_change}) do
+    "The visitor's attention pattern just changed. Adjust your strategy."
+  end
+
+  defp format_trigger(%{trigger: :fingerprint}) do
+    "Just received visitor fingerprint. First real look at who this is. Decide your opening move."
+  end
+
+  defp format_trigger(%{trigger: :interval}) do
+    "Periodic check-in. Look at behavior data and decide if action is warranted."
+  end
+
+  defp format_trigger(_), do: "Periodic check-in."
+
+  defp format_new_events([]), do: ""
+  defp format_new_events(events) do
+    formatted = events
+    |> Enum.map(fn e ->
+      case e.type do
+        :permission_result ->
+          hesitation = if e[:hesitation_ms], do: " (#{e.hesitation_desc})", else: ""
+          "  * PERMISSION: #{e.permission} = #{e.result}#{hesitation}"
+        :text_selection -> "  * SELECTED: \"#{String.slice(e[:text] || e[:detail] || "", 0..80)}\""
+        :tab_return -> "  * TAB RETURN: #{e.detail}"
+        :section_change -> "  * MOVED TO: #{e[:to]} (from #{e[:from]}, spent #{e[:dwell_ms] || 0}ms)"
+        :attention_change -> "  * ATTENTION: #{e[:from]} → #{e[:to]}"
+        :fingerprint -> "  * FINGERPRINT received"
+        :observation -> "  * #{e.detail}"
+        _ -> "  * #{e.type}: #{e[:detail] || ""}"
+      end
+    end)
+    |> Enum.join("\n")
+
+    """
+    NEW EVENTS SINCE YOUR LAST CALL:
+    #{formatted}
     """
   end
 
@@ -447,8 +549,21 @@ defmodule Notiert.Director.Agent do
           reason = if event[:reason] && event[:reason] != "", do: " — #{event[:reason]}", else: ""
           "  [#{ts}] — Phase changed: #{Phase.label(event.from)} → #{Phase.label(event.to)}#{reason} —"
 
-        :permission ->
-          "  [#{ts}] Asked for #{event.permission} → visitor #{event.result}."
+        :permission_result ->
+          hesitation = if event[:hesitation_ms], do: " (#{event.hesitation_desc})", else: ""
+          "  [#{ts}] Permission #{event.permission}: visitor #{event.result}#{hesitation}"
+
+        :text_selection ->
+          "  [#{ts}] Visitor selected text: #{event.detail}"
+
+        :tab_return ->
+          "  [#{ts}] #{event.detail}"
+
+        :section_change ->
+          "  [#{ts}] #{event.detail}"
+
+        :attention_change ->
+          "  [#{ts}] #{event.detail}"
 
         :observation ->
           "  [#{ts}] Noticed: #{event.detail}"

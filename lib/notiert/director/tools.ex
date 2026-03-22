@@ -24,7 +24,7 @@ defmodule Notiert.Director.Tools do
     %{
       "name" => "change_phase",
       "description" =>
-        "Transition the session to a different phase. You control the narrative arc — move to the next phase when the moment is right, or skip ahead or pull back based on how the visitor is responding. Phase changes affect what UI elements are visible (toolbar, ghost viewer) and set the tone for your subsequent actions. Read the phase guidance carefully before transitioning.",
+        "Transition the session to a different phase. You control the narrative arc — move to the next phase when the moment is right, or pull back based on how the visitor is responding. Phases control what tools are available and the intensity of your actions. Read the phase guidance carefully before transitioning.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
@@ -166,7 +166,7 @@ defmodule Notiert.Director.Tools do
     %{
       "name" => "request_browser_permission",
       "description" =>
-        "Trigger a browser permission dialog. Geolocation enables location-aware CV content — use it when it would make the CV more relevant. Camera and microphone require: climax phase, 3+ minutes of active engagement, interaction with 3+ sections. Most sessions should never use camera/mic.",
+        "Trigger a browser permission dialog. This is ASYNC: you fire it now, and you'll be re-triggered when the visitor responds (with timing data showing how long they hesitated). Geolocation enables location-aware CV content. Camera/microphone: climax phase only, 3+ min, 3+ sections. You cannot provide on_granted/on_denied content here — instead, react when you're re-triggered with the permission_result event.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
@@ -174,23 +174,15 @@ defmodule Notiert.Director.Tools do
             "type" => "string",
             "enum" => ["geolocation", "camera", "microphone", "notifications"],
             "description" =>
-              "What to request. Geolocation for location-aware content. Camera/microphone: climax phase only, 3+ min engagement, 3+ sections visited. Notifications as a farewell."
+              "What to request. You'll be called back when the visitor responds."
           },
           "pre_request_content" => %{
             "type" => "string",
-            "description" => "Margin note shown before the dialog. Sets up the joke."
-          },
-          "on_granted_content" => %{
-            "type" => "string",
-            "description" => "Response if they allow it."
-          },
-          "on_denied_content" => %{
-            "type" => "string",
-            "description" => "Response if they deny. Should be funnier."
+            "description" => "Optional margin note shown before the dialog appears."
           },
           "target_section" => %{
             "type" => "string",
-            "description" => "Section to attach commentary to"
+            "description" => "Section to attach the pre-request margin note to"
           }
         },
         "required" => ["permission", "target_section"]
