@@ -303,6 +303,9 @@ defmodule NotiertWeb.CvLive do
         <div class="ghost-cursor-label"><%= if @ghost_cursor, do: @ghost_cursor.label, else: "notiert" %></div>
       </div>
 
+      <%!-- Google Docs-style ruler bar --%>
+      <div class="ruler-bar"></div>
+
       <%!-- Paper container --%>
       <main class="paper">
         <%!-- Header --%>

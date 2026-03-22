@@ -1,12 +1,12 @@
-/* notiert — clean CV aesthetic, mobile-first (iPhone Safari/Chrome) */
+/* notiert — Google Docs inspired CV, mobile-first (iPhone Safari/Chrome) */
 
 :root {
   --bg: #ffffff;
-  --bg-page: #f0f0f0;
-  --fg: #1a1a1a;
+  --bg-page: #f2f3f5;
+  --fg: #202124;
   --fg-secondary: #5f6368;
   --accent: #1a73e8;
-  --surface: #f8f9fa;
+  --surface: #f1f3f4;
   --border: #dadce0;
   --cursor-color: #1a73e8;
   --margin-note-bg: #fef7e0;
@@ -14,9 +14,9 @@
   --highlight-bg: #e8f0fe;
   --font-size-body: 15px;
   --font-size-h1: 24px;
-  --font-size-h2: 17px;
+  --font-size-h2: 14.5px;
   --line-height: 1.65;
-  --section-gap: 24px;
+  --section-gap: 20px;
   --transition-speed: 0.8s;
 }
 
@@ -60,6 +60,8 @@ body {
   background: var(--bg-page);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* ---- Version label ---- */
@@ -79,10 +81,20 @@ body {
   right: max(8px, env(safe-area-inset-right));
 }
 
+/* ---- Google Docs-style ruler bar ---- */
+.ruler-bar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: 8px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
 /* ---- Paper ---- */
 .paper {
-  max-width: 720px;
-  margin: 24px auto;
+  max-width: 680px;
+  margin: 0 auto;
   padding: 40px 24px;
   background: var(--bg);
   min-height: 100vh;
@@ -93,14 +105,18 @@ body {
   padding-bottom: max(40px, env(safe-area-inset-bottom));
 }
 
-/* On larger screens, add paper shadow */
+/* On larger screens, add paper shadow — like a Google Doc */
 @media (min-width: 600px) {
   .paper {
-    padding: 56px 48px;
-    margin: 24px auto;
-    -webkit-box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
-    border-radius: 2px;
+    padding: 72px 72px 80px;
+    margin: 20px auto 40px;
+    -webkit-box-shadow:
+      0 1px 2px 0 rgba(60, 64, 67, 0.3),
+      0 2px 6px 2px rgba(60, 64, 67, 0.15);
+    box-shadow:
+      0 1px 2px 0 rgba(60, 64, 67, 0.3),
+      0 2px 6px 2px rgba(60, 64, 67, 0.15);
+    border-radius: 0;
   }
 }
 
@@ -113,25 +129,30 @@ body {
 .cv-name {
   font-size: var(--font-size-h1);
   font-weight: 700;
-  letter-spacing: -0.3px;
+  letter-spacing: -0.2px;
   color: var(--fg);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .cv-subtitle {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--fg-secondary);
   margin-bottom: 2px;
 }
 
 .cv-links {
   font-family: 'DM Mono', monospace;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--fg-secondary);
 }
 
 .cv-link {
   color: var(--accent);
+  text-decoration: none;
+}
+
+.cv-link:hover {
+  text-decoration: underline;
 }
 
 .cv-separator {
@@ -141,9 +162,11 @@ body {
 
 .cv-heading {
   font-size: var(--font-size-h2);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--fg);
-  padding-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding-bottom: 4px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 12px;
 }
@@ -175,24 +198,26 @@ body {
 
 .experience-role {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13.5px;
+  color: var(--fg);
 }
 
 .experience-period {
   font-family: 'DM Mono', monospace;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--fg-secondary);
   white-space: nowrap;
 }
 
 .experience-company {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--fg-secondary);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .experience-desc {
-  font-size: 14px;
+  font-size: 13.5px;
+  color: var(--fg);
   margin-bottom: 0;
 }
 
@@ -207,12 +232,12 @@ body {
 
 .skill-tag {
   font-family: 'DM Mono', monospace;
-  font-size: 12px;
-  padding: 3px 10px;
+  font-size: 11px;
+  padding: 4px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  color: var(--fg);
+  border-radius: 16px;
+  color: var(--fg-secondary);
   white-space: nowrap;
 }
 
@@ -227,7 +252,7 @@ body {
 
 .project-name {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13.5px;
 }
 
 .project-separator {
@@ -235,12 +260,12 @@ body {
 }
 
 .project-desc {
-  font-size: 14px;
+  font-size: 13.5px;
 }
 
 /* ---- Footer ---- */
 .cv-footer {
-  margin-top: 40px;
+  margin-top: 48px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
   text-align: center;
@@ -248,9 +273,10 @@ body {
 
 .footer-notiert {
   font-family: 'DM Mono', monospace;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--border);
-  letter-spacing: 2px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
 }
 
 /* ---- Rewrite animation ---- */
@@ -466,7 +492,8 @@ body {
   .cv-footer,
   .version-label,
   .reveal-section,
-  .debug-panel {
+  .debug-panel,
+  .ruler-bar {
     display: none !important;
   }
 
