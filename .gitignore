@@ -1,3 +1,21 @@
+# Elixir/Phoenix
+/_build/
+/deps/
+/priv/static/assets/
+/priv/static/cache_manifest.json
+*.ez
+*.beam
+
+# Node
+/assets/node_modules/
 node_modules/
+
+# Environment
 .env
+.env.*
+
+# OS
 .DS_Store
+
+# Old Node.js files (Phase 1)
+package-lock.json

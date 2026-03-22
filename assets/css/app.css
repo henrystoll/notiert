@@ -1,0 +1,512 @@
+/* notiert — Google Docs aesthetic, mobile-first */
+
+:root {
+  --bg: #ffffff;
+  --bg-page: #f0f0f0;
+  --fg: #1a1a1a;
+  --fg-secondary: #5f6368;
+  --accent: #1a73e8;
+  --surface: #f8f9fa;
+  --border: #dadce0;
+  --cursor-color: #1a73e8;
+  --margin-note-bg: #fef7e0;
+  --strikethrough-color: #d93025;
+  --highlight-bg: #e8f0fe;
+  --font-size-body: 15px;
+  --font-size-h1: 24px;
+  --font-size-h2: 17px;
+  --line-height: 1.65;
+  --section-gap: 24px;
+  --transition-speed: 0.8s;
+}
+
+*, *::before, *::after {
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+* {
+  -webkit-transition:
+    color var(--transition-speed) ease,
+    background-color var(--transition-speed) ease,
+    font-size var(--transition-speed) ease,
+    opacity var(--transition-speed) ease,
+    -webkit-transform var(--transition-speed) ease,
+    transform var(--transition-speed) ease,
+    letter-spacing var(--transition-speed) ease,
+    border-color var(--transition-speed) ease;
+  transition:
+    color var(--transition-speed) ease,
+    background-color var(--transition-speed) ease,
+    font-size var(--transition-speed) ease,
+    opacity var(--transition-speed) ease,
+    -webkit-transform var(--transition-speed) ease,
+    transform var(--transition-speed) ease,
+    letter-spacing var(--transition-speed) ease,
+    border-color var(--transition-speed) ease;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: 'Literata', 'Georgia', serif;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height);
+  color: var(--fg);
+  background: var(--bg-page);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- Version label ---- */
+.version-label {
+  position: fixed;
+  bottom: 8px;
+  right: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--border);
+  z-index: 50;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ---- Toolbar ---- */
+.toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+  opacity: 0;
+  -webkit-transform: translateY(-100%);
+  transform: translateY(-100%);
+  -webkit-transition: opacity 0.6s ease, -webkit-transform 0.6s ease;
+  transition: opacity 0.6s ease, transform 0.6s ease;
+  pointer-events: none;
+}
+
+.toolbar.visible {
+  opacity: 1;
+  -webkit-transform: translateY(0);
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.toolbar-inner {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 16px;
+  height: 100%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+
+.doc-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.viewer-avatars {
+  display: -webkit-flex;
+  display: flex;
+  gap: 6px;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.viewer-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  opacity: 0;
+  -webkit-transform: scale(0.5);
+  transform: scale(0.5);
+  -webkit-transition: opacity 0.4s ease, -webkit-transform 0.4s ease;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.viewer-avatar.visible {
+  opacity: 1;
+  -webkit-transform: scale(1);
+  transform: scale(1);
+}
+
+.viewer-you { background: var(--accent); }
+.viewer-ghost { background: #34a853; }
+
+/* ---- Paper ---- */
+.paper {
+  max-width: 720px;
+  margin: 24px auto;
+  padding: 40px 24px;
+  background: var(--bg);
+  min-height: 100vh;
+  /* Safari: prevent content from jumping when keyboard appears */
+  min-height: -webkit-fill-available;
+}
+
+.toolbar.visible ~ .paper {
+  margin-top: 72px;
+}
+
+/* On larger screens, add paper shadow */
+@media (min-width: 600px) {
+  .paper {
+    padding: 56px 48px;
+    margin: 24px auto;
+    -webkit-box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
+    border-radius: 2px;
+  }
+
+  .toolbar.visible ~ .paper {
+    margin-top: 72px;
+  }
+}
+
+/* ---- CV Sections ---- */
+.cv-section {
+  position: relative;
+  margin-bottom: var(--section-gap);
+}
+
+.cv-name {
+  font-size: var(--font-size-h1);
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--fg);
+  margin-bottom: 4px;
+}
+
+.cv-subtitle {
+  font-size: 14px;
+  color: var(--fg-secondary);
+  margin-bottom: 2px;
+}
+
+.cv-links {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  color: var(--fg-secondary);
+}
+
+.cv-link {
+  color: var(--accent);
+}
+
+.cv-separator {
+  margin: 0 4px;
+  color: var(--border);
+}
+
+.cv-heading {
+  font-size: var(--font-size-h2);
+  font-weight: 500;
+  color: var(--fg);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.cv-content p {
+  margin-bottom: 8px;
+}
+
+/* ---- Experience ---- */
+.experience-entry {
+  margin-bottom: 16px;
+}
+
+.experience-entry:last-child {
+  margin-bottom: 0;
+}
+
+.experience-header {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  -webkit-align-items: baseline;
+  align-items: baseline;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.experience-role {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.experience-period {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  color: var(--fg-secondary);
+  white-space: nowrap;
+}
+
+.experience-company {
+  font-size: 13px;
+  color: var(--fg-secondary);
+  margin-bottom: 4px;
+}
+
+.experience-desc {
+  font-size: 14px;
+  margin-bottom: 0;
+}
+
+/* ---- Skills ---- */
+.skill-tags {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.skill-tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  padding: 3px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+/* ---- Projects ---- */
+.project-entry {
+  margin-bottom: 10px;
+}
+
+.project-entry:last-child {
+  margin-bottom: 0;
+}
+
+.project-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.project-separator {
+  color: var(--fg-secondary);
+}
+
+.project-desc {
+  font-size: 14px;
+}
+
+/* ---- Footer ---- */
+.cv-footer {
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.footer-notiert {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--border);
+  letter-spacing: 2px;
+}
+
+/* ---- Rewrite animation ---- */
+
+/* In normal mode: old text fades out, new text replaces it seamlessly.
+   NO strikethrough — the edit should look like the page always said this. */
+.rewrite-old {
+  display: none;
+}
+
+.rewrite-new {
+  /* Inherits normal text styling — invisible edit */
+}
+
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: var(--cursor-color);
+  margin-left: 1px;
+  -webkit-animation: blink 0.8s step-end infinite;
+  animation: blink 0.8s step-end infinite;
+  vertical-align: text-bottom;
+}
+
+@-webkit-keyframes blink { 50% { opacity: 0; } }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Debug mode: show strikethrough and highlight rewrites */
+.debug-rewrite .rewrite-old {
+  display: inline;
+  text-decoration: line-through;
+  color: var(--strikethrough-color);
+  opacity: 0.5;
+}
+
+.debug-rewrite .rewrite-new {
+  color: var(--strikethrough-color) !important;
+  background: rgba(217, 48, 37, 0.08);
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+/* ---- Ghost cursor ---- */
+.ghost-cursor {
+  position: fixed;
+  pointer-events: none;
+  z-index: 200;
+  opacity: 0;
+  -webkit-transition: opacity 0.4s ease, left 0.15s ease-out, top 0.15s ease-out;
+  transition: opacity 0.4s ease, left 0.15s ease-out, top 0.15s ease-out;
+}
+
+.ghost-cursor.visible {
+  opacity: 1;
+}
+
+.ghost-cursor-arrow {
+  width: 0;
+  height: 0;
+  border-left: 6px solid var(--cursor-color);
+  border-top: 4px solid transparent;
+  border-bottom: 10px solid transparent;
+}
+
+.ghost-cursor-label {
+  position: absolute;
+  top: 14px;
+  left: 4px;
+  background: var(--cursor-color);
+  color: #fff;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+/* ---- Margin notes ---- */
+.margin-note {
+  background: var(--margin-note-bg);
+  border: 1px solid #e8d9a0;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-top: 8px;
+  opacity: 0;
+  -webkit-transform: translateY(4px);
+  transform: translateY(4px);
+  -webkit-transition: opacity 0.4s ease, -webkit-transform 0.4s ease;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.margin-note.visible {
+  opacity: 1;
+  -webkit-transform: translateY(0);
+  transform: translateY(0);
+}
+
+.margin-note-author {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.margin-note-content {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+/* On larger screens, position margin notes to the right */
+@media (min-width: 900px) {
+  .margin-note {
+    position: absolute;
+    right: -260px;
+    top: 0;
+    width: 230px;
+    margin-top: 0;
+    -webkit-transform: translateX(10px);
+    transform: translateX(10px);
+  }
+
+  .margin-note.visible {
+    -webkit-transform: translateX(0);
+    transform: translateX(0);
+  }
+}
+
+/* ---- Safari-specific fixes ---- */
+
+/* Fix Safari flex gap fallback */
+@supports not (gap: 6px) {
+  .skill-tags > * { margin: 3px; }
+  .viewer-avatars > * { margin: 0 3px; }
+  .experience-header > * { margin: 2px; }
+}
+
+/* Fix Safari 100vh issue */
+@supports (-webkit-touch-callout: none) {
+  .paper {
+    min-height: -webkit-fill-available;
+  }
+}
+
+/* ---- Print ---- */
+@media print {
+  .toolbar,
+  .ghost-cursor,
+  .margin-note,
+  .cv-footer,
+  .version-label {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .paper {
+    -webkit-box-shadow: none;
+    box-shadow: none;
+    margin: 0;
+    padding: 0;
+    max-width: none;
+  }
+}

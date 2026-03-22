@@ -1,20 +1,27 @@
-# fly.toml app configuration file generated for notiert on 2026-03-22T11:19:45Z
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
-
 app = 'notiert'
-primary_region = 'iad'
+primary_region = 'ams'
 
 [build]
 
+[env]
+  PHX_HOST = "henrystoll.de"
+  PORT = "4000"
+
 [http_service]
-  internal_port = 8080
+  internal_port = 4000
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
   processes = ['app']
+
+[checks]
+  [checks.health]
+    port = 4000
+    type = "http"
+    interval = "30s"
+    timeout = "5s"
+    path = "/"
 
 [[vm]]
   memory = '1gb'

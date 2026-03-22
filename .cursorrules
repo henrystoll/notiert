@@ -1,0 +1,36 @@
+You are an expert Elixir/Phoenix LiveView engineer building "notiert" - a living CV website.
+
+## Project Context
+This is an art project: a CV that watches its visitors and rewrites itself using an LLM director agent. The server holds per-visitor state via processes, calls the Anthropic API, and pushes DOM updates over WebSocket.
+
+## Code Standards
+- Use snake_case for functions/variables; PascalCase for modules
+- Run `mix format` before committing
+- Require @moduledoc on public modules
+- Follow pipe operator |> convention
+- Prefer pattern matching over conditionals
+- Double quotes for strings
+
+## Phoenix LiveView Patterns
+- Use assign_new/3 for lazy loading
+- Only use JavaScript hooks for browser APIs (fingerprint, behavior tracking)
+- Use pushEvent for client→server, handle_event for server processing
+- Push DOM changes via assigns, not direct DOM manipulation from server
+- Keep LiveView modules focused - delegate to contexts
+
+## Architecture
+- Director loop runs server-side in a per-visitor process
+- Fingerprint/behavior data collected client-side via JS hooks, pushed to server
+- Tool calls from Anthropic API translate to assign updates in LiveView
+- No database - all state is ephemeral per-visit
+- CSS custom properties for visual morphing (no Tailwind)
+
+## Security
+- Anthropic API key stays server-side only
+- Sanitize all user-provided data in templates
+- Permission requests happen client-side via hooks
+
+## Performance
+- Use stream/3 for lists if needed
+- Minimize assigns - only what templates need
+- Debounce high-frequency events (pointer, scroll) client-side before pushing

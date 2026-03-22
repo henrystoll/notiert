@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Henry Stoll - Curriculum Vitae</title>
+  <style>
+    body {
+      font-family: Georgia, 'Times New Roman', serif;
+      max-width: 680px;
+      margin: 40px auto;
+      padding: 0 20px;
+      color: #1a1a1a;
+      line-height: 1.65;
+      font-size: 15px;
+    }
+    h1 { font-size: 24px; margin-bottom: 4px; letter-spacing: -0.3px; }
+    h2 { font-size: 17px; font-weight: 500; border-bottom: 1px solid #dadce0; padding-bottom: 6px; margin: 24px 0 12px; }
+    .subtitle { color: #5f6368; font-size: 14px; margin-bottom: 2px; }
+    .links { font-family: monospace; font-size: 12px; color: #5f6368; margin-bottom: 24px; }
+    .entry { margin-bottom: 16px; }
+    .role { font-weight: 600; font-size: 14px; }
+    .period { font-family: monospace; font-size: 12px; color: #5f6368; float: right; }
+    .company { font-size: 13px; color: #5f6368; }
+    .desc { font-size: 14px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag { font-family: monospace; font-size: 12px; padding: 3px 10px; background: #f8f9fa; border: 1px solid #dadce0; border-radius: 12px; }
+    .project-name { font-weight: 600; font-size: 14px; }
+    footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #dadce0; text-align: center; font-family: monospace; font-size: 11px; color: #dadce0; letter-spacing: 2px; }
+    @media print { body { margin: 0; padding: 0; max-width: none; } footer { display: none; } }
+  </style>
+</head>
+<body>
+  <h1>Henry Stoll</h1>
+  <p class="subtitle">Data Scientist & Product Owner · Copenhagen, Denmark</p>
+  <p class="links">henrystoll.de · Copenhagen, DK</p>
+
+  <h2>About</h2>
+  <p>Data Scientist at Danske Bank working on agentic AI systems, LLM observability, and responsible AI in regulated financial services. Building under an Agentic Development Life Cycle (ADLC) framework. External lecturer at Copenhagen Business School, teaching programming for the MSc in Business Administration and Data Science programme. Background spanning SAP consulting, AI project leadership, supply chain management, and United Nations work.</p>
+
+  <h2>Experience</h2>
+  <div class="entry">
+    <span class="period">2023–Present</span>
+    <div class="role">Product Owner / Data Scientist</div>
+    <div class="company">Danske Bank, Copenhagen</div>
+    <p class="desc">Leading agentic AI initiatives in a regulated banking environment. Designing LLM observability infrastructure with LangSmith/Langfuse. Building multi-agent credit decisioning systems. Navigating the intersection of innovation and compliance.</p>
+  </div>
+  <div class="entry">
+    <span class="period">2026–Present</span>
+    <div class="role">External Lecturer</div>
+    <div class="company">Copenhagen Business School</div>
+    <p class="desc">Teaching Computational Intelligence for Business to MSc students. Curriculum design emphasising hacker mindset pedagogy with progressive portfolio assessment and real-world data infrastructure.</p>
+  </div>
+  <div class="entry">
+    <span class="period">2018–2023</span>
+    <div class="role">AI & Technology Consultant</div>
+    <div class="company">Various, International</div>
+    <p class="desc">SAP consulting (technical through board-level), blockchain project leadership, cross-platform app development, supply chain optimisation, United Nations advisory work.</p>
+  </div>
+
+  <h2>Skills</h2>
+  <div class="tags">
+    <span class="tag">Python</span>
+    <span class="tag">Elixir</span>
+    <span class="tag">TypeScript</span>
+    <span class="tag">Kubernetes</span>
+    <span class="tag">LLM Orchestration</span>
+    <span class="tag">LangChain/LangSmith</span>
+    <span class="tag">AWS Bedrock</span>
+    <span class="tag">Talos Linux</span>
+    <span class="tag">Cilium/Flux GitOps</span>
+    <span class="tag">SAP</span>
+    <span class="tag">German</span>
+    <span class="tag">Danish</span>
+  </div>
+
+  <h2>Projects</h2>
+  <div class="entry">
+    <span class="project-name">Homelab Infrastructure</span> — Kubernetes cluster on Hetzner Cloud running Talos Linux with Cilium CNI and Flux GitOps. Because renting compute is fine but owning the control plane is better.
+  </div>
+  <div class="entry">
+    <span class="project-name">notiert</span> — This website. A living CV that watches its visitors and rewrites itself in real-time using an LLM director agent.
+  </div>
+
+  <h2>Education</h2>
+  <p>MSc Business Administration & Data Science — Copenhagen Business School</p>
+
+  <footer>notiert</footer>
+</body>
+</html>
