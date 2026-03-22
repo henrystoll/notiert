@@ -3,16 +3,48 @@
 ## Project Overview
 A living CV website that passively observes visitors and rewrites itself in real-time using an LLM director agent. Built with Phoenix LiveView for persistent WebSocket connections and server-side state management.
 
+Most visitors access via **iPhone Safari/Chrome mobile**. All UI decisions should prioritize that viewport.
+
 ## Architecture
+
+### Event-driven director loop
 - **Phoenix LiveView** drives the UI via WebSocket
-- **Per-visitor session process** holds fingerprint, behavior, and director state
-- **Director agent** calls Anthropic API server-side, returns tool calls that push DOM updates
+- **Per-visitor Session GenServer** holds all state, fires director on meaningful events
+- **Director agent** calls Anthropic API, returns tool calls that push DOM updates
 - **JS Hooks** collect fingerprint and behavior data, push to server via `pushEvent`
 
+### Director trigger model
+The director is **event-driven**, not purely interval-based:
+- **Events trigger the director**: fingerprint received, section change, text selection, tab return, attention change, permission result
+- **Events are debounced** (800ms) to coalesce nearby events into one call
+- **Permission results fire immediately** (no debounce) with hesitation timing
+- **Backup tick** every 10s as fallback when no events fire
+- **One API call at a time** (mutex) — events queue while busy
+- Each call receives: trigger reason, new events since last call, full event log, current state
+
+### Event log
+One continuous log of both visitor events and director actions, chronologically interleaved:
+- `VISITOR` events: fingerprint, section_change, attention_change, text_selection, tab_return, permission granted/denied (with hesitation timing)
+- `DIRECTOR` actions: edits, notes, visual adjustments, cursor moves, permission requests, phase changes, waits
+- Supporting data included (dwell times, hesitation ms), raw data excluded
+
+### Single cursor
+One cursor element, fully director-controlled via `show_cursor` / `hide_cursor` tools. The code does nothing automatic — the director decides when to show/hide the cursor. System prompt instructs the director to pair cursor with edits (show cursor at section, then edit it).
+
+### CSS variables for theming
+The director can adjust visual presentation via CSS custom properties. Creative uses:
+- `--accent`: shift to visitor's national colors (inferred from timezone/geolocation)
+- `--bg`/`--fg`: adapt to dark mode preference
+- `--fg-secondary`: warm up for late-night readers
+- `--cursor-color`: make the cursor stand out
+- Can target individual sections or the whole page
+- All changes animate smoothly via CSS transitions
+
 ## Key Modules
-- `Notiert.Director.Agent` - Anthropic API integration, prompt building, tool definitions
-- `Notiert.Director.Session` - Per-visitor GenServer holding all state, runs director loop
+- `Notiert.Director.Agent` - Anthropic API integration, prompt building, event log formatting
+- `Notiert.Director.Session` - Per-visitor GenServer, event-driven director loop, permission timing
 - `Notiert.Director.Tools` - Tool definitions for the Anthropic API
+- `Notiert.Director.Phase` - Phase definitions (silent → subtle → suspicious → overt → climax)
 - `NotiertWeb.CvLive` - Main LiveView, renders CV, handles events from hooks and director
 - `NotiertWeb.Components.Cv` - Function components for CV sections
 
@@ -23,6 +55,38 @@ mix phx.server
 # Visit http://localhost:4000
 ```
 
+## Testing
+
+### In a full environment (local or CI)
+```bash
+mix test                    # run all tests
+mix test --only describe:"Session"  # run specific test group
+mix compile --warnings-as-errors    # catch issues
+mix format --check-formatted        # style check
+```
+
+### In Claude Code remote environment (no hex/deps available)
+The remote environment has Elixir 1.14 + OTP 25 but **cannot download hex or deps** (network proxy blocks hex.pm). Use these alternatives:
+
+```bash
+# Syntax check — parse all modified files (catches syntax errors, not module refs)
+elixir -e 'Code.string_to_quoted(File.read("lib/path/to/file.ex") |> elem(1))'
+
+# Compile individual files (will warn about missing modules — that's expected)
+elixir -e 'Code.compile_file("lib/notiert/director/agent.ex")'
+
+# The warnings about "module X is not available" are EXPECTED in isolation —
+# they resolve when the full project compiles with mix.
+```
+
+**What to verify in this environment:**
+- No syntax errors in modified files
+- No string interpolation issues in heredocs (e.g., `#{var}` inside `@system_prompt`)
+- Pattern matches and function heads are correct
+- Test files parse cleanly
+
+**Full compilation and test runs happen in CI** (GitHub Actions) or via `fly deploy`.
+
 ## Environment Variables
 - `ANTHROPIC_API_KEY` - Required for director agent
 - `SECRET_KEY_BASE` - Phoenix secret (generated)
@@ -32,13 +96,8 @@ mix phx.server
 ## Code Style
 - Elixir: snake_case functions, PascalCase modules, `mix format`
 - JS: ES modules, hooks in `assets/js/hooks/`
-- CSS: CSS custom properties for theming, mobile-first
-- No Tailwind - custom Google Docs aesthetic CSS
-
-## Testing
-```bash
-mix test
-```
+- CSS: CSS custom properties for theming, mobile-first (iPhone Safari primary)
+- No Tailwind — custom clean CV aesthetic CSS
 
 ## Debug Mode
 Add `?debug=1` to URL to see LLM-rewritten content highlighted in red.
@@ -61,12 +120,12 @@ Add `?debug=1` to URL to see LLM-rewritten content highlighted in red.
 All director prompts, API responses, and session interactions are logged extensively. Logs are the primary way to observe and debug the director's behavior from Claude Code (since we can't see the browser).
 
 **Log prefixes:**
-- `[session:<id>]` — per-visitor session lifecycle, fingerprint receipt, behavior updates, permission results, tick firing, phase transitions, action execution, disconnect summary
+- `[session:<id>]` — per-visitor session lifecycle, fingerprint, behavior, permission results (with hesitation timing), triggers, phase transitions, actions, disconnect summary
 - `[director]` — full prompt sent to Anthropic API (with `=== PROMPT ===` delimiters), full API response (with `=== RESPONSE ===` delimiters), timing, errors
 
 **Log levels:**
-- `info` — prompts, responses, actions executed, fingerprint received, phase changes, session start/stop (the important stuff)
-- `debug` — behavior updates (every 2s, high volume), tick skips, next-tick scheduling
+- `info` — prompts, responses, actions executed, fingerprint received, phase changes, session start/stop, trigger events (the important stuff)
+- `debug` — behavior updates (every 2s, high volume), debounce skips, backup tick scheduling
 - `warning/error` — API failures, missing API key
 
 **Reading logs in production:**

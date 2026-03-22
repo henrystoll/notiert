@@ -7,7 +7,8 @@ import { startBehaviorTracking } from "./hooks/behavior";
 import {
   typeRewrite,
   adjustVisual,
-  showGhostCursor,
+  showCursor,
+  hideCursor,
   showMarginNote,
   requestPermission,
 } from "./hooks/tools";
@@ -39,8 +40,12 @@ Hooks.Notiert = {
       adjustVisual(data);
     });
 
-    this.handleEvent("show_ghost_cursor", (data) => {
-      showGhostCursor(this.el, data);
+    this.handleEvent("show_cursor", (data) => {
+      showCursor(this.el, data);
+    });
+
+    this.handleEvent("hide_cursor", () => {
+      hideCursor();
     });
 
     this.handleEvent("show_margin_note", (data) => {

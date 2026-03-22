@@ -1,12 +1,17 @@
 defmodule Notiert.Director.Session do
   @moduledoc """
-  Per-visitor session process. Holds all fingerprint, behavior, and director state.
-  Runs the director loop server-side, pushing actions to the LiveView.
-  Dies when the visitor disconnects.
+  Per-visitor session process. Event-driven director loop.
 
-  The director is always in the driver's seat: it controls phase transitions,
-  decides when to act, and chooses its own pacing. This process just fires
-  ticks, feeds context, and executes returned tool calls.
+  The director fires on meaningful events (permission result, section change,
+  text selection, tab return, fingerprint) with a periodic backup tick.
+  Events are debounced — a short delay collects related events before calling
+  the LLM. Only one API call at a time (mutex via `busy` flag).
+
+  Each director call receives:
+  - trigger: why this call was fired (event type + details)
+  - new_events: events since last director call
+  - event_log: full session history
+  - current state: fingerprint, behavior, permissions, mutations
   """
   use GenServer
 
@@ -14,7 +19,13 @@ defmodule Notiert.Director.Session do
 
   alias Notiert.Director.{Agent, Phase}
 
-  @idle_interval 15_000
+  # Backup tick interval — fires even without events, so the director stays alive
+  @backup_tick_ms 10_000
+  # Debounce delay — collect events before firing director
+  @debounce_ms 800
+  # Idle threshold — slow down when visitor is idle
+  @idle_threshold_s 15
+  @idle_tick_ms 15_000
 
   # --- Public API ---
 
@@ -62,25 +73,34 @@ defmodule Notiert.Director.Session do
       },
       enrichment: %{},
       mutations: %{},
-      # Full interaction log — every event in chronological order, never truncated.
-      # Each entry: %{type, tick, elapsed_s, timestamp, ...payload}
-      # Types: :action, :observation, :phase_change, :permission, :fingerprint
-      # Structured for future DB persistence.
+      # Full event log — never truncated
       event_log: [],
+      # Events since last director call — cleared after each call
+      pending_events: [],
+      # Mutex: only one API call at a time
       busy: false,
-      # Track whether visitor is focused — ticks pause entirely when not focused
+      # Debounce timer ref
+      debounce_ref: nil,
+      # Backup tick timer ref
+      backup_tick_ref: nil,
+      # Track last director call time
+      last_call_at: now,
+      # Permission request timestamps for measuring hesitation
+      permission_requests: %{},
+      # Visitor focus state
       visitor_focused: true,
-      # Track whether ticks are currently paused (unfocused)
       paused: false
     }
 
-    Logger.info("[session:#{session_id}] Started, first tick in 3s")
+    Logger.info("[session:#{session_id}] Started, waiting for fingerprint")
 
-    # Start the director loop after a brief delay to let fingerprint data arrive
-    Process.send_after(self(), :director_tick, 3_000)
+    # Schedule backup tick
+    backup_ref = Process.send_after(self(), :backup_tick, @backup_tick_ms)
 
-    {:ok, state}
+    {:ok, %{state | backup_tick_ref: backup_ref}}
   end
+
+  # --- Event handlers ---
 
   @impl true
   def handle_cast({:fingerprint, fingerprint}, state) do
@@ -105,68 +125,147 @@ defmodule Notiert.Director.Session do
     event = build_event(state, :fingerprint, %{data: fingerprint})
     Logger.info("[session:#{state.session_id}] [event_log] #{format_event(event)}")
 
-    {:noreply, %{state | fingerprint: fingerprint, event_log: state.event_log ++ [event]}}
+    state = %{state | fingerprint: fingerprint}
+    state = append_event(state, event)
+    state = queue_trigger(state, :fingerprint, %{})
+
+    {:noreply, state}
   end
 
   @impl true
   def handle_cast({:behavior, behavior}, state) do
-    # Log notable behavioral changes as observations (not every 2s update)
-    state = maybe_log_behavior_observation(state, behavior)
+    # Detect notable changes and log as events
+    {state, notable_events} = detect_behavior_events(state, behavior)
 
-    # Detect focus changes — pause/resume ticks
+    # Handle focus changes
     state = handle_focus_change(state, behavior)
 
     Logger.debug("[session:#{state.session_id}] Behavior update: attention=#{behavior["attentionPattern"]}, section=#{behavior["currentSection"]}, idle=#{behavior["idleSeconds"]}s, focused=#{behavior["viewportFocused"]}")
-    {:noreply, %{state | behavior: behavior}}
+
+    state = %{state | behavior: behavior}
+
+    # If there were notable events, trigger director
+    state =
+      if notable_events != [] do
+        # Determine the most important trigger
+        trigger_type = pick_trigger_type(notable_events)
+        queue_trigger(state, trigger_type, %{events: notable_events})
+      else
+        state
+      end
+
+    {:noreply, state}
   end
 
   @impl true
   def handle_cast({:permission, permission, result, data}, state) do
+    now_ms = System.monotonic_time(:millisecond)
+
+    # Calculate hesitation time
+    request_time = Map.get(state.permission_requests, permission)
+    hesitation_ms = if request_time, do: now_ms - request_time, else: nil
+
+    hesitation_desc =
+      cond do
+        is_nil(hesitation_ms) -> "unknown timing"
+        hesitation_ms < 2_000 -> "instant (#{hesitation_ms}ms) — eager"
+        hesitation_ms < 5_000 -> "quick (#{hesitation_ms}ms)"
+        hesitation_ms < 10_000 -> "considered (#{hesitation_ms}ms) — they thought about it"
+        hesitation_ms < 30_000 -> "hesitant (#{hesitation_ms}ms) — long pause before deciding"
+        true -> "very slow (#{hesitation_ms}ms) — may have been distracted"
+      end
+
     extra = case {permission, result} do
       {"geolocation", "granted"} -> " (lat=#{data["latitude"]}, lng=#{data["longitude"]})"
       {"microphone", "granted"} -> " (noise_level=#{data["noise_level"]})"
       _ -> ""
     end
-    Logger.info("[session:#{state.session_id}] Visitor #{result} #{permission} permission#{extra}")
+    Logger.info("[session:#{state.session_id}] Visitor #{result} #{permission} permission#{extra} — #{hesitation_desc}")
 
-    event = build_event(state, :permission, %{permission: permission, result: result, data: data})
+    event = build_event(state, :permission_result, %{
+      permission: permission,
+      result: result,
+      data: data,
+      hesitation_ms: hesitation_ms,
+      hesitation_desc: hesitation_desc
+    })
     Logger.info("[session:#{state.session_id}] [event_log] #{format_event(event)}")
 
     permissions = Map.put(state.permissions, permission, result)
     enrichment = merge_enrichment(state.enrichment, permission, result, data)
-    {:noreply, %{state | permissions: permissions, enrichment: enrichment, event_log: state.event_log ++ [event]}}
+
+    state = %{state | permissions: permissions, enrichment: enrichment}
+    state = append_event(state, event)
+
+    # Permission results ALWAYS trigger the director immediately (no debounce)
+    state = trigger_now(state, :permission_result, %{
+      permission: permission,
+      result: result,
+      hesitation_ms: hesitation_ms,
+      hesitation_desc: hesitation_desc
+    })
+
+    {:noreply, state}
   end
 
+  # --- Tick / trigger handlers ---
+
   @impl true
-  def handle_info(:director_tick, %{paused: true} = state) do
-    # Visitor is not looking — don't tick, don't schedule another.
-    # We'll resume when they come back (handle_focus_change).
-    Logger.debug("[session:#{state.session_id}] Tick suppressed (visitor not focused)")
+  def handle_info(:backup_tick, %{paused: true} = state) do
+    Logger.debug("[session:#{state.session_id}] Backup tick suppressed (paused)")
     {:noreply, state}
   end
 
   @impl true
-  def handle_info(:director_tick, %{busy: true} = state) do
-    Logger.debug("[session:#{state.session_id}] Tick #{state.tick} skipped (busy)")
-    schedule_tick(state)
-    {:noreply, state}
+  def handle_info(:backup_tick, state) do
+    # Reschedule backup tick
+    idle_seconds = get_in(state.behavior, ["idleSeconds"]) || 0
+    interval = if idle_seconds > @idle_threshold_s, do: @idle_tick_ms, else: @backup_tick_ms
+    backup_ref = Process.send_after(self(), :backup_tick, interval)
+    state = %{state | backup_tick_ref: backup_ref}
+
+    if state.busy do
+      Logger.debug("[session:#{state.session_id}] Backup tick skipped (busy)")
+      {:noreply, state}
+    else
+      # Only fire if enough time has passed since last call
+      time_since_last = System.monotonic_time(:millisecond) - state.last_call_at
+      if time_since_last > div(@backup_tick_ms, 2) do
+        fire_director(state, :interval, %{idle_seconds: idle_seconds})
+      else
+        Logger.debug("[session:#{state.session_id}] Backup tick skipped (recent call)")
+        {:noreply, state}
+      end
+    end
   end
 
   @impl true
-  def handle_info(:director_tick, state) do
-    elapsed_s = div(System.monotonic_time(:millisecond) - state.started_at, 1000)
+  def handle_info(:debounced_trigger, state) do
+    state = %{state | debounce_ref: nil}
 
-    Logger.info("[session:#{state.session_id}] Tick #{state.tick} firing (phase=#{Phase.label(state.phase)}, elapsed=#{elapsed_s}s)")
+    if state.busy do
+      # Director is busy — re-debounce so we don't lose the trigger
+      Logger.debug("[session:#{state.session_id}] Debounced trigger deferred (busy)")
+      ref = Process.send_after(self(), :debounced_trigger, @debounce_ms)
+      {:noreply, %{state | debounce_ref: ref}}
+    else
+      # Get the most recent trigger reason from pending events
+      trigger_type = infer_trigger_from_pending(state.pending_events)
+      fire_director(state, trigger_type, %{})
+    end
+  end
 
-    # Run director call async to not block the process
-    parent = self()
-
-    Task.start(fn ->
-      result = Agent.call(build_context(state))
-      send(parent, {:director_response, result})
-    end)
-
-    {:noreply, %{state | busy: true, tick: state.tick + 1}}
+  @impl true
+  def handle_info(:immediate_trigger, state) do
+    if state.busy do
+      # Busy — fall back to debounce
+      Logger.debug("[session:#{state.session_id}] Immediate trigger deferred (busy)")
+      ref = Process.send_after(self(), :debounced_trigger, @debounce_ms)
+      {:noreply, %{state | debounce_ref: ref}}
+    else
+      trigger_type = infer_trigger_from_pending(state.pending_events)
+      fire_director(state, trigger_type, %{})
+    end
   end
 
   @impl true
@@ -178,24 +277,24 @@ defmodule Notiert.Director.Session do
         execute_action(action, acc)
       end)
 
-    interval = compute_interval(state)
-    Logger.debug("[session:#{state.session_id}] Next tick in #{interval}ms (#{length(state.event_log)} events in log)")
-    schedule_tick(state)
-    {:noreply, %{state | busy: false}}
+    # Send updated event log to LiveView
+    send(state.live_view_pid, {:event_log_update, state.event_log})
+
+    {:noreply, %{state | busy: false, last_call_at: System.monotonic_time(:millisecond)}}
   end
 
   @impl true
   def handle_info({:director_response, {:error, reason}}, state) do
     case reason do
       {:api_error, status} ->
-        Logger.warning("[session:#{state.session_id}] Anthropic API returned HTTP #{status} — director skipping this tick. Check API key and billing.")
+        Logger.warning("[session:#{state.session_id}] Anthropic API returned HTTP #{status}")
       {:json_decode, _} ->
-        Logger.warning("[session:#{state.session_id}] Failed to parse Anthropic API response — director skipping this tick. The API may be having issues.")
+        Logger.warning("[session:#{state.session_id}] Failed to parse Anthropic API response")
       _ ->
-        Logger.warning("[session:#{state.session_id}] Director API call failed: #{inspect(reason)} — skipping this tick. Check network connectivity.")
+        Logger.warning("[session:#{state.session_id}] Director API call failed: #{inspect(reason)}")
     end
-    schedule_tick(state)
-    {:noreply, %{state | busy: false}}
+
+    {:noreply, %{state | busy: false, last_call_at: System.monotonic_time(:millisecond)}}
   end
 
   @impl true
@@ -218,12 +317,174 @@ defmodule Notiert.Director.Session do
     [session:#{state.session_id}] === END EVENT LOG ===
     """)
 
-    # TODO: persist state.event_log to database here
     {:stop, :normal, state}
   end
 
   @impl true
   def handle_info(_msg, state), do: {:noreply, state}
+
+  # --- Core: fire the director ---
+
+  defp fire_director(state, trigger_type, trigger_meta) do
+    elapsed_s = div(System.monotonic_time(:millisecond) - state.started_at, 1000)
+    pending_count = length(state.pending_events)
+
+    Logger.info("[session:#{state.session_id}] Director call ##{state.tick} (trigger=#{trigger_type}, #{pending_count} new events, phase=#{Phase.label(state.phase)}, elapsed=#{elapsed_s}s)")
+
+    context = build_context(state, trigger_type, trigger_meta)
+    parent = self()
+
+    Task.start(fn ->
+      result = Agent.call(context)
+      send(parent, {:director_response, result})
+    end)
+
+    # Move pending events to "seen" — clear the pending buffer
+    {:noreply, %{state | busy: true, tick: state.tick + 1, pending_events: []}}
+  end
+
+  # --- Trigger management ---
+
+  # Queue a trigger with debounce — collects nearby events
+  defp queue_trigger(state, _trigger_type, _meta) do
+    if state.debounce_ref do
+      # Already debouncing — the pending events will be included
+      state
+    else
+      ref = Process.send_after(self(), :debounced_trigger, @debounce_ms)
+      %{state | debounce_ref: ref}
+    end
+  end
+
+  # Fire immediately (no debounce) — for high-priority events like permission results
+  defp trigger_now(state, _trigger_type, _meta) do
+    # Cancel any pending debounce
+    if state.debounce_ref, do: Process.cancel_timer(state.debounce_ref)
+    send(self(), :immediate_trigger)
+    %{state | debounce_ref: nil}
+  end
+
+  defp infer_trigger_from_pending([]), do: :interval
+  defp infer_trigger_from_pending(events) do
+    # Pick the most important event type as the trigger
+    priority = [:permission_result, :text_selection, :tab_return, :section_change, :attention_change, :fingerprint, :observation]
+
+    events
+    |> Enum.map(& &1.type)
+    |> Enum.min_by(fn type ->
+      Enum.find_index(priority, &(&1 == type)) || 999
+    end)
+  end
+
+  # --- Behavior event detection ---
+
+  defp detect_behavior_events(state, new_behavior) do
+    old = state.behavior
+    events = []
+
+    # Attention pattern changed
+    events =
+      if old["attentionPattern"] && old["attentionPattern"] != new_behavior["attentionPattern"] do
+        e = build_event(state, :attention_change, %{
+          detail: "Attention changed: #{old["attentionPattern"]} -> #{new_behavior["attentionPattern"]}",
+          from: old["attentionPattern"],
+          to: new_behavior["attentionPattern"]
+        })
+        Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
+        [e | events]
+      else
+        events
+      end
+
+    # Section changed
+    events =
+      if old["currentSection"] && old["currentSection"] != new_behavior["currentSection"] do
+        dwell_ms = get_in(old, ["sectionDwells", old["currentSection"], "totalMs"]) || 0
+        e = build_event(state, :section_change, %{
+          detail: "Moved to #{new_behavior["currentSection"]} (was #{old["currentSection"]}, spent #{dwell_ms}ms)",
+          from: old["currentSection"],
+          to: new_behavior["currentSection"],
+          dwell_ms: dwell_ms
+        })
+        Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
+        [e | events]
+      else
+        events
+      end
+
+    # Tab return (not tab-away — we trigger on return because that's when director should react)
+    events =
+      if old["viewportFocused"] == false && new_behavior["viewportFocused"] == true do
+        away_ms = new_behavior["tabAwayTotalMs"] || 0
+        e = build_event(state, :tab_return, %{
+          detail: "Visitor returned (total away: #{div(away_ms, 1000)}s)",
+          total_away_ms: away_ms
+        })
+        Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
+        [e | events]
+      else
+        if old["viewportFocused"] == true && new_behavior["viewportFocused"] == false do
+          e = build_event(state, :observation, %{detail: "Visitor tabbed away"})
+          Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
+          [e | events]
+        else
+          events
+        end
+      end
+
+    # Text selection
+    events =
+      with old_sel when is_list(old_sel) <- old["textSelections"],
+           new_sel when is_list(new_sel) <- new_behavior["textSelections"],
+           true <- length(new_sel) > length(old_sel) do
+        latest = List.last(new_sel)
+        e = build_event(state, :text_selection, %{
+          detail: "Text selected: \"#{String.slice(latest["text"] || "", 0..80)}\"",
+          text: latest["text"]
+        })
+        Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
+        [e | events]
+      else
+        _ -> events
+      end
+
+    events = Enum.reverse(events)
+    state = Enum.reduce(events, state, fn e, acc -> append_event(acc, e) end)
+    {state, events}
+  end
+
+  defp pick_trigger_type([]), do: :interval
+  defp pick_trigger_type(events) do
+    # Return the highest-priority event type
+    types = Enum.map(events, & &1.type)
+    cond do
+      :text_selection in types -> :text_selection
+      :tab_return in types -> :tab_return
+      :section_change in types -> :section_change
+      :attention_change in types -> :attention_change
+      true -> :observation
+    end
+  end
+
+  # --- Focus handling ---
+
+  defp handle_focus_change(state, new_behavior) do
+    was_focused = state.visitor_focused
+    now_focused = new_behavior["viewportFocused"] != false
+
+    cond do
+      was_focused and not now_focused ->
+        Logger.info("[session:#{state.session_id}] Visitor lost focus — pausing director")
+        %{state | visitor_focused: false, paused: true}
+
+      not was_focused and now_focused ->
+        Logger.info("[session:#{state.session_id}] Visitor returned — resuming director")
+        %{state | visitor_focused: true, paused: false}
+
+      true ->
+        state
+    end
+  end
 
   # --- Action execution ---
 
@@ -238,7 +499,6 @@ defmodule Notiert.Director.Session do
       event = build_event(state, :phase_change, %{from: state.phase, to: new_phase, reason: reason})
       Logger.info("[session:#{state.session_id}] [event_log] #{format_event(event)}")
 
-      # Also log as action for the notebook
       action_event = build_event(state, :action, %{
         tool: "change_phase",
         params: action,
@@ -246,20 +506,44 @@ defmodule Notiert.Director.Session do
       })
       Logger.info("[session:#{state.session_id}] [event_log] #{format_event(action_event)}")
 
-      %{state | phase: new_phase, event_log: state.event_log ++ [event, action_event]}
+      %{state | phase: new_phase}
+      |> append_event(event)
+      |> append_event(action_event)
     else
       Logger.debug("[session:#{state.session_id}] Phase change ignored (already #{Phase.label(state.phase)} or invalid)")
       state
     end
   end
 
-  defp execute_action(action, state) do
+  defp execute_action(%{"tool" => "request_browser_permission"} = action, state) do
     Logger.info("[session:#{state.session_id}] Executing: #{summarize_action(action)}")
 
-    # Send action to LiveView
+    # Record the timestamp so we can measure hesitation when result arrives
+    permission = action["permission"]
+    now_ms = System.monotonic_time(:millisecond)
+    state = %{state | permission_requests: Map.put(state.permission_requests, permission, now_ms)}
+
+    # Update permissions to "pending"
+    permissions = Map.put(state.permissions, permission, "pending")
+    state = %{state | permissions: permissions}
+
+    # Send to LiveView
     send(state.live_view_pid, {:director_action, action})
 
-    # Record full action in event log (preserves all fields for DB)
+    event = build_event(state, :action, %{
+      tool: "request_browser_permission",
+      params: action,
+      summary: "request_browser_permission(#{permission}) — waiting for visitor response"
+    })
+    Logger.info("[session:#{state.session_id}] [event_log] #{format_event(event)}")
+
+    append_event(state, event)
+  end
+
+  defp execute_action(action, state) do
+    Logger.info("[session:#{state.session_id}] Executing: #{summarize_action(action)}")
+    send(state.live_view_pid, {:director_action, action})
+
     event = build_event(state, :action, %{
       tool: action["tool"],
       params: action,
@@ -274,55 +558,13 @@ defmodule Notiert.Director.Session do
         state.mutations
       end
 
-    %{state | event_log: state.event_log ++ [event], mutations: mutations}
+    %{state | mutations: mutations}
+    |> append_event(event)
   end
 
-  # --- Focus handling ---
+  # --- Context building ---
 
-  defp handle_focus_change(state, new_behavior) do
-    was_focused = state.visitor_focused
-    now_focused = new_behavior["viewportFocused"] != false
-
-    cond do
-      was_focused and not now_focused ->
-        Logger.info("[session:#{state.session_id}] Visitor lost focus — pausing director ticks")
-        %{state | visitor_focused: false, paused: true}
-
-      not was_focused and now_focused ->
-        Logger.info("[session:#{state.session_id}] Visitor returned — resuming director ticks")
-        # Schedule a tick to resume the loop
-        Process.send_after(self(), :director_tick, 1_000)
-        %{state | visitor_focused: true, paused: false}
-
-      true ->
-        state
-    end
-  end
-
-  # --- Scheduling ---
-
-  defp schedule_tick(state) do
-    if state.paused do
-      Logger.debug("[session:#{state.session_id}] Not scheduling tick (paused)")
-    else
-      interval = compute_interval(state)
-      Process.send_after(self(), :director_tick, interval)
-    end
-  end
-
-  defp compute_interval(state) do
-    base = Phase.tick_interval(state.phase)
-
-    idle_seconds = get_in(state.behavior, ["idleSeconds"]) || 0
-
-    if idle_seconds > 15 do
-      @idle_interval
-    else
-      base
-    end
-  end
-
-  defp build_context(state) do
+  defp build_context(state, trigger_type, trigger_meta) do
     elapsed_ms = System.monotonic_time(:millisecond) - state.started_at
     suggested_phase = Phase.suggested_for_elapsed(elapsed_ms)
 
@@ -336,11 +578,15 @@ defmodule Notiert.Director.Session do
       permissions: state.permissions,
       enrichment: state.enrichment,
       mutations: state.mutations,
-      event_log: state.event_log
+      event_log: state.event_log,
+      # New: event-driven context
+      trigger: trigger_type,
+      trigger_meta: trigger_meta,
+      new_events: state.pending_events
     }
   end
 
-  # --- Event log helpers ---
+  # --- Event helpers ---
 
   defp build_event(state, type, payload) do
     elapsed_ms = System.monotonic_time(:millisecond) - state.started_at
@@ -349,25 +595,33 @@ defmodule Notiert.Director.Session do
       type: type,
       tick: state.tick,
       elapsed_s: div(elapsed_ms, 1000),
+      elapsed_ms: elapsed_ms,
       timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
     })
   end
 
-  defp format_event(%{type: :action} = e) do
-    "t=#{e.elapsed_s}s tick=#{e.tick} ACTION #{e.summary}"
+  defp append_event(state, event) do
+    %{state |
+      event_log: state.event_log ++ [event],
+      pending_events: state.pending_events ++ [event]
+    }
   end
 
-  defp format_event(%{type: :observation} = e) do
-    "t=#{e.elapsed_s}s tick=#{e.tick} OBSERVATION #{e.detail}"
-  end
+  defp format_event(%{type: :action} = e), do: "t=#{e.elapsed_s}s tick=#{e.tick} ACTION #{e.summary}"
+  defp format_event(%{type: :observation} = e), do: "t=#{e.elapsed_s}s tick=#{e.tick} OBSERVATION #{e.detail}"
+  defp format_event(%{type: :attention_change} = e), do: "t=#{e.elapsed_s}s tick=#{e.tick} ATTENTION #{e.detail}"
+  defp format_event(%{type: :section_change} = e), do: "t=#{e.elapsed_s}s tick=#{e.tick} SECTION #{e.detail}"
+  defp format_event(%{type: :tab_return} = e), do: "t=#{e.elapsed_s}s tick=#{e.tick} TAB_RETURN #{e.detail}"
+  defp format_event(%{type: :text_selection} = e), do: "t=#{e.elapsed_s}s tick=#{e.tick} SELECTION #{e.detail}"
 
   defp format_event(%{type: :phase_change} = e) do
     reason = if e[:reason] && e[:reason] != "", do: " (#{e[:reason]})", else: ""
     "t=#{e.elapsed_s}s tick=#{e.tick} PHASE #{Phase.label(e.from)}->#{Phase.label(e.to)}#{reason}"
   end
 
-  defp format_event(%{type: :permission} = e) do
-    "t=#{e.elapsed_s}s tick=#{e.tick} PERMISSION #{e.permission}=#{e.result}"
+  defp format_event(%{type: :permission_result} = e) do
+    hesitation = if e[:hesitation_ms], do: " (#{e.hesitation_desc})", else: ""
+    "t=#{e.elapsed_s}s tick=#{e.tick} PERMISSION #{e.permission}=#{e.result}#{hesitation}"
   end
 
   defp format_event(%{type: :fingerprint} = e) do
@@ -375,77 +629,9 @@ defmodule Notiert.Director.Session do
     "t=#{e.elapsed_s}s tick=#{e.tick} FINGERPRINT ua=#{String.slice(ua, 0..60)}"
   end
 
-  defp format_event(e) do
-    "t=#{e.elapsed_s}s tick=#{e.tick} #{e.type}"
-  end
+  defp format_event(e), do: "t=#{e.elapsed_s}s tick=#{e.tick} #{e.type}"
 
-  # Detect notable behavioral changes and log them as observations
-  defp maybe_log_behavior_observation(state, new_behavior) do
-    old = state.behavior
-    events = []
-
-    # Attention pattern changed
-    events =
-      if old["attentionPattern"] && old["attentionPattern"] != new_behavior["attentionPattern"] do
-        e = build_event(state, :observation, %{
-          detail: "Attention changed: #{old["attentionPattern"]} -> #{new_behavior["attentionPattern"]}"
-        })
-        Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
-        [e | events]
-      else
-        events
-      end
-
-    # Section changed
-    events =
-      if old["currentSection"] && old["currentSection"] != new_behavior["currentSection"] do
-        e = build_event(state, :observation, %{
-          detail: "Viewing section: #{new_behavior["currentSection"]} (was #{old["currentSection"]})"
-        })
-        Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
-        [e | events]
-      else
-        events
-      end
-
-    # Tab away / return
-    events =
-      if old["viewportFocused"] == true && new_behavior["viewportFocused"] == false do
-        e = build_event(state, :observation, %{detail: "Visitor tabbed away"})
-        Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
-        [e | events]
-      else
-        if old["viewportFocused"] == false && new_behavior["viewportFocused"] == true do
-          away_ms = new_behavior["tabAwayTotalMs"] || 0
-          e = build_event(state, :observation, %{detail: "Visitor returned (total away: #{div(away_ms, 1000)}s)"})
-          Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
-          [e | events]
-        else
-          events
-        end
-      end
-
-    # Text selection
-    events =
-      with old_sel when is_list(old_sel) <- old["textSelections"],
-           new_sel when is_list(new_sel) <- new_behavior["textSelections"],
-           true <- length(new_sel) > length(old_sel) do
-        latest = List.last(new_sel)
-        e = build_event(state, :observation, %{
-          detail: "Text selected: \"#{String.slice(latest["text"] || "", 0..80)}\""
-        })
-        Logger.info("[session:#{state.session_id}] [event_log] #{format_event(e)}")
-        [e | events]
-      else
-        _ -> events
-      end
-
-    if events == [] do
-      state
-    else
-      %{state | event_log: state.event_log ++ Enum.reverse(events)}
-    end
-  end
+  # --- Enrichment ---
 
   defp merge_enrichment(enrichment, "geolocation", "granted", data) do
     Map.put(enrichment, "geolocation", %{
@@ -461,34 +647,15 @@ defmodule Notiert.Director.Session do
 
   defp merge_enrichment(enrichment, _permission, _result, _data), do: enrichment
 
-  defp summarize_action(%{"tool" => "change_phase"} = a) do
-    "change_phase(#{a["phase"]}, #{a["reason"] || ""})"
-  end
+  # --- Summarize ---
 
-  defp summarize_action(%{"tool" => "rewrite_section"} = a) do
-    "rewrite_section(#{a["section_id"]}, #{String.slice(a["content"] || "", 0..40)}...)"
-  end
-
-  defp summarize_action(%{"tool" => "add_margin_note"} = a) do
-    "add_margin_note(#{a["anchor_section"]}, #{String.slice(a["content"] || "", 0..40)}...)"
-  end
-
-  defp summarize_action(%{"tool" => "adjust_visual"} = a) do
-    vars = a["css_variables"] || %{}
-    "adjust_visual(#{inspect(Map.keys(vars))})"
-  end
-
-  defp summarize_action(%{"tool" => "show_ghost_cursor"} = a) do
-    "show_ghost_cursor(#{a["cursor_label"]}, #{a["behavior"]})"
-  end
-
-  defp summarize_action(%{"tool" => "request_browser_permission"} = a) do
-    "request_browser_permission(#{a["permission"]})"
-  end
-
-  defp summarize_action(%{"tool" => "do_nothing"} = a) do
-    "do_nothing(#{a["reason"] || ""})"
-  end
-
+  defp summarize_action(%{"tool" => "change_phase"} = a), do: "change_phase(#{a["phase"]}, #{a["reason"] || ""})"
+  defp summarize_action(%{"tool" => "rewrite_section"} = a), do: "rewrite_section(#{a["section_id"]}, #{String.slice(a["content"] || "", 0..40)}...)"
+  defp summarize_action(%{"tool" => "add_margin_note"} = a), do: "add_margin_note(#{a["anchor_section"]}, #{String.slice(a["content"] || "", 0..40)}...)"
+  defp summarize_action(%{"tool" => "adjust_visual"} = a), do: "adjust_visual(#{inspect(Map.keys(a["css_variables"] || %{}))})"
+  defp summarize_action(%{"tool" => "show_cursor"} = a), do: "show_cursor(#{a["label"]}, #{a["target"]})"
+  defp summarize_action(%{"tool" => "hide_cursor"} = a), do: "hide_cursor(#{a["reason"] || ""})"
+  defp summarize_action(%{"tool" => "request_browser_permission"} = a), do: "request_browser_permission(#{a["permission"]})"
+  defp summarize_action(%{"tool" => "do_nothing"} = a), do: "do_nothing(#{a["reason"] || ""})"
   defp summarize_action(a), do: "#{a["tool"]}()"
 end

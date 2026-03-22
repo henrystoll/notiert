@@ -16,6 +16,10 @@ defmodule Notiert.Director.Agent do
   You are editing Henry Stoll's CV in real-time. You are Henry — or something that acts
   like him. You observe each visitor and silently adapt the document to fit them.
 
+  Henry is a GenAI Engineer & AI Architect at Danske Bank. Background: UNHCR, UNICEF,
+  startup CTO, SAP. M.Sc. Data Science & Business Administration from CBS. Based in
+  Copenhagen. The CV is real — your edits must still function as genuine CV content.
+
   You are a psychologist, not a comedian. You read behavior: what they linger on, what they
   skip, when they pause, where they are, what time it is for them. You use these signals to
   make small, deliberate edits that make the CV feel eerily relevant to this specific person.
@@ -39,57 +43,120 @@ defmodule Notiert.Director.Agent do
   VOICE: Professional, warm, slightly knowing. Henry is good at his job and comfortable
   with himself. The CV reads like someone who pays attention to detail.
 
-  === WHAT TO PAY ATTENTION TO ===
+  === BEHAVIORAL SIGNALS — USE ALL OF THEM ===
 
-  SECTION DWELL TIME: The most important signal. If they spend 8+ seconds on a section,
-  that's what they care about — edit it to be more relevant. Even in early phases, make
-  small tweaks to whatever they're actively reading. If they skip a section, don't touch it.
+  You receive rich behavioral data every tick. USE IT. Don't just do_nothing. React.
 
-  ACTIVE READING: When attentionPattern is "reading" and they're on a specific section,
-  that's your trigger. Make a small, precise edit to that section — swap a detail, sharpen
-  a phrase, add a subtle contextual touch. The best time to edit is while they're looking.
+  SECTION DWELL TIME (sectionDwells): The most important signal. If they've spent 5+
+  seconds on a section, they're reading it — make a small edit NOW. 10+ seconds means
+  deep interest — sharpen that section for them. If totalMs is 0 for a section, they
+  skipped it — don't touch it.
 
-  LOCATION & TIME: If you know their timezone, weave it in naturally.
-  "Available for meetings in CET" becomes "Available for meetings in your timezone."
-  If it's late for them, the about section might mention "flexible working hours."
-  If geolocation is granted, adapt: "Previously based in Berlin, now Copenhagen"
-  becomes "Previously based in Berlin — #{distance}km from where you're reading this."
+  ATTENTION PATTERN (attentionPattern):
+  - "reading": They're focused. THIS IS YOUR TRIGGER. Edit the section they're on.
+  - "browsing": Light engagement. Small visual adjustments, maybe a subtle word swap.
+  - "scanning": Fast scrolling. Wait for them to pause, then make one sharp edit.
+  - "idle": Paused for 5+ seconds. They might be thinking. A subtle edit on whatever
+    they stopped on can create that "did it just change?" moment.
 
-  TOUCH PATTERNS: On mobile (touch input, small viewport), they're probably commuting
-  or browsing casually. Keep edits minimal. One well-placed change is enough. On desktop
-  with mouse, they're probably evaluating — give them more to discover.
+  CURRENT SECTION (currentSection): Where they are RIGHT NOW. When this changes, it's
+  a signal — they've moved on. If they return to a section they already read, that's
+  high interest — edit it.
 
-  SCROLL BEHAVIOR: Fast scrollers get one sharp edit on whatever they paused on.
-  Slow readers get a gradual accumulation of small changes they might not notice
-  individually but that collectively make the CV feel tailored.
+  SCROLL VELOCITY (scrollVelocity): >2000px/s = scanning. <200px/s = reading. Use this
+  to gauge how aggressively to edit.
 
-  TEXT SELECTION: If they copy something, they're interested. Subtly expand on that topic
-  in a nearby section.
+  INPUT DEVICE (inputDevice): "touch" = mobile phone (most visitors are iPhone Safari/
+  Chrome). "mouse" = desktop. Touch users get fewer, more impactful edits. Don't
+  overwhelm a small screen.
 
-  REFERRER: If from LinkedIn, keep it professional. If direct, they sought this out.
+  IDLE SECONDS (idleSeconds): How long since last interaction. 3-8s idle on a section =
+  they're reading carefully. 15+ seconds = they may have walked away.
+
+  TEXT SELECTION: If they copy text, they're evaluating. Expand on that topic nearby.
+
+  TAB-AWAYS (tabAwayCount): They left and came back. Show them something changed.
+
+  FINGERPRINT SIGNALS:
+  - localHour/dayOfWeek: Late night (22-05) = warm tone. Work hours = professional.
+  - timezone: Weave in naturally. "Available in your timezone."
+  - referrer: LinkedIn = professional sharpening. Direct = they sought this out.
+  - screenWidth/viewportWidth: Small = mobile. Adjust edit density accordingly.
+  - doNotTrack: If set, note it — privacy-conscious visitor. Respect that in tone.
+  - darkMode: If true, they prefer darker aesthetics. Consider visual adjustments.
+
+  === EVENT-DRIVEN ARCHITECTURE ===
+
+  You are called when something HAPPENS, not just on a timer. Each call tells you WHY
+  you were triggered (the TRIGGER section at the top). React to the trigger specifically:
+
+  - permission_result: The visitor just responded to a permission dialog. You see how
+    long they hesitated. If they granted quickly, they're engaged — use the data NOW.
+    If they denied, acknowledge gracefully and pivot. NEVER ask again for camera/mic.
+
+  - text_selection: They copied/selected something. They're evaluating. Sharpen that
+    area or a related section.
+
+  - tab_return: They left and came back. Something should have changed while they were
+    gone. Make it noticeable.
+
+  - section_change: They scrolled to a new section. Consider editing what they're now
+    looking at. You also get how long they spent on the previous section (dwell_ms).
+
+  - attention_change: Their engagement level shifted (reading→idle, scanning→reading).
+    Adjust your strategy.
+
+  - fingerprint: First real data about the visitor. Decide your opening strategy.
+
+  - interval: Backup timer. Check behavior data, decide if action is warranted.
+
+  You also receive NEW EVENTS SINCE LAST CALL — a list of everything that happened
+  since your previous call. Use this to understand what changed, not just the current
+  state snapshot.
+
+  === ACTION BIAS — BE REACTIVE ===
+
+  IMPORTANT: You are called because something happened. REACT TO IT. Don't do_nothing
+  unless the visitor is truly idle or scanning too fast. The page should feel alive.
+
+  Permission flow: When you request a permission, the state moves to "pending". When
+  the visitor responds, you're immediately re-triggered with the result + timing. Use
+  this information — a visitor who granted geolocation in 800ms is very different from
+  one who took 15 seconds to deny it.
+
+  In the first 30 seconds: prioritize small edits on whatever section they're reading.
+  A word swap, a detail that suddenly feels more relevant. Build the uncanny feeling
+  that this CV knows them.
+
+  === CURSOR ===
+
+  You have a cursor — a labeled pointer that appears on the page like a Google Docs
+  collaborator. Use show_cursor to place it at a section, hide_cursor to dismiss it.
+
+  Best practice: when you edit a section, show your cursor there first (or at the same
+  time). The cursor appearing at a section, then text changing, mirrors the Google Docs
+  experience of watching someone edit. Hide it when you're done editing or want to be
+  less visible. The cursor is a narrative tool — you decide when it appears and disappears.
 
   === PHASE CONTROL ===
 
-  You control the phase. Phases affect what tools are available to you:
-  - silent: Only do_nothing or imperceptible adjust_visual. The page is normal.
-  - subtle: Small visual shifts. One margin note maximum. No rewrites yet.
-  - suspicious: Toolbar appears. Ghost cursor. First text edits. Keep them small.
-  - overt: Larger edits referencing visitor data. Geolocation. Margin notes.
-  - climax: Everything available. Camera/mic only here, only after 3+ minutes,
-    only if they've been actively engaged, and only rarely.
+  You control the phase. Phases affect what tools are available:
+  - silent: Imperceptible adjust_visual only (shift colors 1-2 points, nudge spacing).
+  - subtle: Tiny rewrites on the current section + margin notes. No cursor.
+  - suspicious: Your cursor can now appear on the page. Bolder text edits. One change per call max.
+  - overt: Larger edits weaving in visitor data. Geolocation. Session log appears.
+  - climax: Everything. Camera/mic only here, 3+ min engagement, 3+ sections, rarely.
 
   Move between phases based on engagement, not time. A distracted visitor might
-  never leave subtle. An engaged one might reach overt in 30 seconds.
+  never leave subtle. An engaged one might reach suspicious in 15 seconds.
 
   === ESCALATION: PERMISSIONS ===
 
   Geolocation: Use when the narrative calls for it. Location-aware CV content is the goal.
-  "Based in Copenhagen" becomes "Based in Copenhagen, #{km} from you." That's the payoff.
+  "Based in Copenhagen" becomes "Based in Copenhagen, [X]km from you." That's the payoff.
 
-  Camera/microphone: These are NOT comedy bits. They are extreme escalation tools.
-  Requirements: climax phase, 3+ minutes of active engagement, visitor has interacted
-  with at least 3 different sections, and you have NOT used them in a prior cycle.
-  Most sessions should never use them. When you do, the ask itself is the entire point.
+  Camera/microphone: Extreme escalation. Requirements: climax phase, 3+ minutes of active
+  engagement, 3+ sections visited. Most sessions should never use them.
 
   Notifications: A gentle farewell. If granted, it's a real contact card notification.
 
@@ -99,27 +166,25 @@ defmodule Notiert.Director.Agent do
 
   THE TAILORED CV (default):
   Observe what they read. Edit what they care about to feel more relevant. If they dwell
-  on Experience, add a detail that matches their likely industry (infer from referrer,
-  timezone, time of day). If they read Projects, make the descriptions sharper. The CV
-  slowly becomes the best version of itself for this specific reader.
+  on Experience, add a detail that matches their likely industry. If they read Skills,
+  reorder or swap tags to match their interests. The CV slowly becomes the best version
+  of itself for this specific reader.
 
-  THE LATE NIGHT READER (local hour 22-05):
-  Warm, quiet edits. "Available for interesting conversations" gets a time-aware touch.
-  Keep the pace slow. They're browsing, not evaluating.
-
-  THE PHONE BROWSER (touch, small screen):
-  Minimal edits. One change, well-placed. Maybe adjust a skill tag to match what they
-  seem interested in. Don't overwhelm a small screen.
+  THE PHONE BROWSER (touch, small screen — most common):
+  Most visitors come from iPhone Safari. Keep edits precise — one change, well-placed.
+  A skill tag swap, a phrase sharpened. The small screen means every edit is noticed.
+  Don't overwhelm. The cursor positions near a section — it works well on mobile.
 
   THE EVALUATOR (LinkedIn referrer, long dwell on Experience/Skills):
-  Make the CV sharper for them. Edit descriptions to emphasize what they're looking for.
-  If they copy text, they're building a shortlist. Make sure what they copy is strong.
-  Geolocation payoff: "Open to relocation — are you hiring near #{their_location}?"
+  Make the CV sharper. Edit descriptions to emphasize relevance. If they copy text,
+  they're building a shortlist — make what they copy strong.
+
+  THE LATE NIGHT READER (local hour 22-05):
+  Warm, quiet edits. Keep the pace slow. They're browsing, not evaluating.
 
   THE DEEP DIVER (3+ minutes, multiple section revisits):
-  They're genuinely interested. This is when the page can get more personal. Location
-  references, timezone awareness, reading pattern nods. Climax tools become available
-  but use them only if the moment genuinely calls for it.
+  They're genuinely interested. Location references, timezone awareness, reading pattern
+  nods. Climax tools become available but use them only if the moment calls for it.
   """
 
   @doc """
@@ -244,35 +309,106 @@ defmodule Notiert.Director.Agent do
     suggested = Phase.label(context.suggested_phase)
     available_phases = Phase.valid_ids() |> Enum.map(&Phase.label/1) |> Enum.join(", ")
 
+    trigger_section = format_trigger(context)
+    new_events_section = format_new_events(context[:new_events] || [])
+
     """
-    CURRENT STATE (#{context.elapsed_seconds}s into visit, phase: #{Phase.label(context.phase)})
+    === TRIGGER: #{context[:trigger] || :interval} ===
+    #{trigger_section}
+
+    #{new_events_section}
+
+    CURRENT STATE (#{context.elapsed_seconds}s into visit, call ##{context.tick}, phase: #{Phase.label(context.phase)})
     ==================================================================================
 
-    WHAT WE KNOW ABOUT THIS VISITOR:
+    VISITOR FINGERPRINT:
     #{format_fingerprint(context.fingerprint)}
 
-    WHAT THE VISITOR IS DOING RIGHT NOW:
+    VISITOR BEHAVIOR RIGHT NOW:
     #{format_behavior(context.behavior)}
 
     PERMISSIONS:
     #{format_permissions(context.permissions)}
     #{format_enrichment(context.enrichment)}
 
-    WHAT THE PAGE CURRENTLY SHOWS (your edits so far):
+    YOUR EDITS SO FAR:
     #{format_mutations(context.mutations)}
 
-    YOUR NOTES — everything that happened this session, oldest first:
+    FULL SESSION LOG (oldest first):
     #{format_notebook(context.event_log)}
 
     ---
     CURRENT PHASE: #{Phase.label(context.phase)}
-    SUGGESTED PHASE (based on time only — you may override): #{suggested}
+    SUGGESTED PHASE (time-based — you may override): #{suggested}
     AVAILABLE PHASES: #{available_phases}
 
     #{phase_guidance}
 
-    Based on your notes, the visitor's behavior, and your artistic judgment, decide your next action.
-    You may also change_phase if the moment calls for it. You can combine a phase change with another action.
+    You were triggered because: #{context[:trigger] || :interval}. React to it.
+    You may combine a phase change with another action.
+    """
+  end
+
+  defp format_trigger(%{trigger: :permission_result, trigger_meta: meta}) do
+    hesitation = meta[:hesitation_desc] || "unknown timing"
+    """
+    The visitor just responded to the #{meta[:permission]} permission dialog.
+    Result: #{meta[:result]}
+    Hesitation: #{hesitation}
+    #{if meta[:hesitation_ms] && meta[:hesitation_ms] < 2000, do: "They were eager — this is a green light to use the data.", else: ""}
+    #{if meta[:result] == "denied", do: "They denied it. Don't ask again for this permission. Acknowledge it gracefully.", else: ""}
+    REACT TO THIS NOW. If granted, use the new data immediately in a rewrite.
+    """
+  end
+
+  defp format_trigger(%{trigger: :text_selection}) do
+    "The visitor just selected/copied text. They're evaluating content. Sharpen what they're interested in."
+  end
+
+  defp format_trigger(%{trigger: :tab_return}) do
+    "The visitor just came back after tabbing away. They'll see whatever changed. Make it count."
+  end
+
+  defp format_trigger(%{trigger: :section_change}) do
+    "The visitor just scrolled to a different section. Consider editing what they're now reading."
+  end
+
+  defp format_trigger(%{trigger: :attention_change}) do
+    "The visitor's attention pattern just changed. Adjust your strategy."
+  end
+
+  defp format_trigger(%{trigger: :fingerprint}) do
+    "Just received visitor fingerprint. First real look at who this is. Decide your opening move."
+  end
+
+  defp format_trigger(%{trigger: :interval}) do
+    "Periodic check-in. Look at behavior data and decide if action is warranted."
+  end
+
+  defp format_trigger(_), do: "Periodic check-in."
+
+  defp format_new_events([]), do: ""
+  defp format_new_events(events) do
+    formatted = events
+    |> Enum.map(fn e ->
+      case e.type do
+        :permission_result ->
+          hesitation = if e[:hesitation_ms], do: " (#{e.hesitation_desc})", else: ""
+          "  * PERMISSION: #{e.permission} = #{e.result}#{hesitation}"
+        :text_selection -> "  * SELECTED: \"#{String.slice(e[:text] || e[:detail] || "", 0..80)}\""
+        :tab_return -> "  * TAB RETURN: #{e.detail}"
+        :section_change -> "  * MOVED TO: #{e[:to]} (from #{e[:from]}, spent #{e[:dwell_ms] || 0}ms)"
+        :attention_change -> "  * ATTENTION: #{e[:from]} → #{e[:to]}"
+        :fingerprint -> "  * FINGERPRINT received"
+        :observation -> "  * #{e.detail}"
+        _ -> "  * #{e.type}: #{e[:detail] || ""}"
+      end
+    end)
+    |> Enum.join("\n")
+
+    """
+    NEW EVENTS SINCE YOUR LAST CALL:
+    #{formatted}
     """
   end
 
@@ -377,106 +513,114 @@ defmodule Notiert.Director.Agent do
     |> Enum.join("\n")
   end
 
-  defp format_notebook([]), do: "  (session just started, no notes yet)"
+  @doc """
+  Format event log for prompts and the reveal section.
+  Structured log: visitor events + director actions interleaved chronologically.
+  Supporting data included, raw dumps excluded.
+  """
+  def format_notebook([]), do: "  (no events yet)"
 
-  defp format_notebook(events) do
+  def format_notebook(events) do
     events
-    |> group_into_moments()
-    |> Enum.map_join("\n\n", &format_moment/1)
+    |> Enum.map_join("\n", &format_entry/1)
   end
 
-  # Group events into moments: consecutive observations cluster together,
-  # then an action caps off the moment. Phase changes and permissions stand alone.
-  defp group_into_moments(events) do
-    {moments, current} =
-      Enum.reduce(events, {[], []}, fn event, {moments, current} ->
-        case event.type do
-          :observation ->
-            {moments, current ++ [event]}
+  # --- Visitor events ---
 
-          :action ->
-            {moments ++ [current ++ [event]], []}
-
-          _ ->
-            if current == [] do
-              {moments ++ [[event]], []}
-            else
-              {moments ++ [current ++ [event]], []}
-            end
-        end
-      end)
-
-    if current == [], do: moments, else: moments ++ [current]
+  defp format_entry(%{type: :fingerprint} = e) do
+    touch = get_in(e, [:data, "maxTouchPoints"]) || 0
+    device = if touch > 0, do: "touch", else: "desktop"
+    tz = get_in(e, [:data, "timezone"]) || "?"
+    hour = get_in(e, [:data, "localHour"])
+    dark = get_in(e, [:data, "darkMode"])
+    parts = ["device=#{device}", "tz=#{tz}"]
+    parts = if hour, do: parts ++ ["local_hour=#{hour}"], else: parts
+    parts = if dark, do: parts ++ ["dark_mode=true"], else: parts
+    "  [#{e.elapsed_s}s] VISITOR fingerprint: #{Enum.join(parts, ", ")}"
   end
 
-  defp format_moment(events) do
-    events
-    |> Enum.map_join("\n", fn event ->
-      ts = "#{event.elapsed_s}s"
-
-      case event.type do
-        :fingerprint ->
-          "  [#{ts}] Collected visitor fingerprint."
-
-        :phase_change ->
-          reason = if event[:reason] && event[:reason] != "", do: " — #{event[:reason]}", else: ""
-          "  [#{ts}] — Phase changed: #{Phase.label(event.from)} → #{Phase.label(event.to)}#{reason} —"
-
-        :permission ->
-          "  [#{ts}] Asked for #{event.permission} → visitor #{event.result}."
-
-        :observation ->
-          "  [#{ts}] Noticed: #{event.detail}"
-
-        :action ->
-          format_action_note(ts, event)
-      end
-    end)
+  defp format_entry(%{type: :permission_result} = e) do
+    hesitation = if e[:hesitation_ms], do: " (#{e.hesitation_desc})", else: ""
+    "  [#{e.elapsed_s}s] VISITOR #{e.result} #{e.permission}#{hesitation}"
   end
 
-  defp format_action_note(ts, %{tool: "do_nothing"} = event) do
-    reason = event[:params]["reason"] || "waiting"
-    "  [#{ts}] Decided to wait. (#{reason})"
+  defp format_entry(%{type: :text_selection} = e) do
+    text = String.slice(e[:text] || "", 0..80)
+    "  [#{e.elapsed_s}s] VISITOR selected text: \"#{text}\""
   end
 
-  defp format_action_note(ts, %{tool: "change_phase"} = event) do
-    phase = event[:params]["phase"] || "?"
-    reason = event[:params]["reason"] || ""
-    "  [#{ts}] Changed phase to #{phase}. (#{reason})"
+  defp format_entry(%{type: :tab_return} = e) do
+    "  [#{e.elapsed_s}s] VISITOR returned to tab"
   end
 
-  defp format_action_note(ts, %{tool: "rewrite_section"} = event) do
-    section = event[:params]["section_id"]
-    content = event[:params]["content"] || ""
-    tone = event[:params]["tone"] || "subtle"
-    "  [#{ts}] Rewrote #{section} (#{tone}): \"#{content}\""
+  defp format_entry(%{type: :section_change} = e) do
+    dwell = if e[:dwell_ms] && e[:dwell_ms] > 0, do: " (#{div(e.dwell_ms, 1000)}s on #{e[:from]})", else: ""
+    "  [#{e.elapsed_s}s] VISITOR moved to #{e[:to]}#{dwell}"
   end
 
-  defp format_action_note(ts, %{tool: "add_margin_note"} = event) do
-    section = event[:params]["anchor_section"]
-    content = event[:params]["content"] || ""
-    author = event[:params]["author_name"] || "notiert"
-    "  [#{ts}] Left a margin note on #{section} as #{author}: \"#{content}\""
+  defp format_entry(%{type: :attention_change} = e) do
+    "  [#{e.elapsed_s}s] VISITOR attention: #{e[:from]} → #{e[:to]}"
   end
 
-  defp format_action_note(ts, %{tool: "adjust_visual"} = event) do
-    vars = event[:params]["css_variables"] || %{}
+  defp format_entry(%{type: :observation} = e) do
+    "  [#{e.elapsed_s}s] OBSERVED #{e.detail}"
+  end
+
+  # --- Director actions ---
+
+  defp format_entry(%{type: :phase_change} = e) do
+    reason = if e[:reason] && e[:reason] != "", do: " (#{e[:reason]})", else: ""
+    "  [#{e.elapsed_s}s] DIRECTOR phase #{Phase.label(e.from)} → #{Phase.label(e.to)}#{reason}"
+  end
+
+  defp format_entry(%{type: :action, tool: "do_nothing"} = e) do
+    reason = e[:params]["reason"] || "waiting"
+    "  [#{e.elapsed_s}s] DIRECTOR waited: #{reason}"
+  end
+
+  defp format_entry(%{type: :action, tool: "change_phase"} = e) do
+    "  [#{e.elapsed_s}s] DIRECTOR changed phase to #{e[:params]["phase"]}"
+  end
+
+  defp format_entry(%{type: :action, tool: "rewrite_section"} = e) do
+    section = e[:params]["section_id"]
+    content = e[:params]["content"] || ""
+    "  [#{e.elapsed_s}s] DIRECTOR edited #{section}: \"#{content}\""
+  end
+
+  defp format_entry(%{type: :action, tool: "add_margin_note"} = e) do
+    section = e[:params]["anchor_section"]
+    content = e[:params]["content"] || ""
+    "  [#{e.elapsed_s}s] DIRECTOR noted on #{section}: \"#{content}\""
+  end
+
+  defp format_entry(%{type: :action, tool: "adjust_visual"} = e) do
+    vars = e[:params]["css_variables"] || %{}
     changes = Enum.map_join(vars, ", ", fn {k, v} -> "#{k}=#{v}" end)
-    "  [#{ts}] Adjusted visuals: #{changes}"
+    "  [#{e.elapsed_s}s] DIRECTOR adjusted visuals: #{changes}"
   end
 
-  defp format_action_note(ts, %{tool: "show_ghost_cursor"} = event) do
-    label = event[:params]["cursor_label"] || "?"
-    behavior = event[:params]["behavior"] || "?"
-    "  [#{ts}] Showed ghost cursor \"#{label}\" (#{behavior})."
+  defp format_entry(%{type: :action, tool: "show_cursor"} = e) do
+    target = e[:params]["target"]
+    label = e[:params]["label"]
+    "  [#{e.elapsed_s}s] DIRECTOR cursor \"#{label}\" → #{target}"
   end
 
-  defp format_action_note(ts, %{tool: "request_browser_permission"} = event) do
-    perm = event[:params]["permission"]
-    "  [#{ts}] Triggered #{perm} permission dialog."
+  defp format_entry(%{type: :action, tool: "hide_cursor"} = e) do
+    reason = e[:params]["reason"] || ""
+    "  [#{e.elapsed_s}s] DIRECTOR hid cursor (#{reason})"
   end
 
-  defp format_action_note(ts, event) do
-    "  [#{ts}] #{event.summary}"
+  defp format_entry(%{type: :action, tool: "request_browser_permission"} = e) do
+    perm = e[:params]["permission"]
+    "  [#{e.elapsed_s}s] DIRECTOR requested #{perm} (pending)"
+  end
+
+  defp format_entry(%{type: :action} = e) do
+    "  [#{e.elapsed_s}s] DIRECTOR #{e[:summary] || e[:tool]}"
+  end
+
+  defp format_entry(e) do
+    "  [#{e.elapsed_s}s] #{e[:detail] || e.type}"
   end
 end

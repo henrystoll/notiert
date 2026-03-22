@@ -7,7 +7,7 @@ defmodule Notiert.Director.ToolsTest do
     test "returns a list of tool definitions" do
       tools = Tools.definitions()
       assert is_list(tools)
-      assert length(tools) >= 6
+      assert length(tools) >= 7
     end
 
     test "each tool has required fields" do
@@ -25,7 +25,8 @@ defmodule Notiert.Director.ToolsTest do
       assert "change_phase" in names
       assert "rewrite_section" in names
       assert "adjust_visual" in names
-      assert "show_ghost_cursor" in names
+      assert "show_cursor" in names
+      assert "hide_cursor" in names
       assert "add_margin_note" in names
       assert "request_browser_permission" in names
       assert "do_nothing" in names

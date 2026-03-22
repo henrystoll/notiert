@@ -78,29 +78,16 @@ defmodule Notiert.Director.PhaseTest do
     end
   end
 
-  describe "toolbar_visible?/1" do
-    test "toolbar hidden in early phases" do
-      refute Phase.toolbar_visible?(:silent)
-      refute Phase.toolbar_visible?(:subtle)
+  describe "cursor_available?/1" do
+    test "cursor not available in early phases" do
+      refute Phase.cursor_available?(:silent)
+      refute Phase.cursor_available?(:subtle)
     end
 
-    test "toolbar visible in later phases" do
-      assert Phase.toolbar_visible?(:suspicious)
-      assert Phase.toolbar_visible?(:overt)
-      assert Phase.toolbar_visible?(:climax)
-    end
-  end
-
-  describe "ghost_viewer_visible?/1" do
-    test "ghost hidden until overt" do
-      refute Phase.ghost_viewer_visible?(:silent)
-      refute Phase.ghost_viewer_visible?(:subtle)
-      refute Phase.ghost_viewer_visible?(:suspicious)
-    end
-
-    test "ghost visible in overt and climax" do
-      assert Phase.ghost_viewer_visible?(:overt)
-      assert Phase.ghost_viewer_visible?(:climax)
+    test "cursor available from suspicious onward" do
+      assert Phase.cursor_available?(:suspicious)
+      assert Phase.cursor_available?(:overt)
+      assert Phase.cursor_available?(:climax)
     end
   end
 

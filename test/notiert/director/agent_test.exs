@@ -37,7 +37,7 @@ defmodule Notiert.Director.AgentTest do
         %{type: :phase_change, tick: 2, elapsed_s: 10, timestamp: "2026-03-22T12:00:10Z", from: :silent, to: :subtle, reason: "visitor engaged"},
         %{type: :action, tick: 3, elapsed_s: 15, timestamp: "2026-03-22T12:00:15Z", tool: "add_margin_note", params: %{"anchor_section" => "about", "content" => "Nice browser."}, summary: "add_margin_note(about)"},
         %{type: :action, tick: 4, elapsed_s: 20, timestamp: "2026-03-22T12:00:20Z", tool: "do_nothing", params: %{"reason" => "letting note settle"}, summary: "do_nothing(letting note settle)"},
-        %{type: :permission, tick: 5, elapsed_s: 50, timestamp: "2026-03-22T12:00:50Z", permission: "geolocation", result: "denied", data: %{}}
+        %{type: :permission_result, tick: 5, elapsed_s: 50, elapsed_ms: 50_000, timestamp: "2026-03-22T12:00:50Z", permission: "geolocation", result: "denied", hesitation_ms: 8200, hesitation_desc: "considered (8200ms) — they thought about it", data: %{}}
       ]
 
       context = build_test_context(%{event_log: events})
@@ -130,7 +130,10 @@ defmodule Notiert.Director.AgentTest do
         },
         enrichment: %{},
         mutations: %{},
-        event_log: []
+        event_log: [],
+        trigger: :interval,
+        trigger_meta: %{},
+        new_events: []
       },
       overrides
     )

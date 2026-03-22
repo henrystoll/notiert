@@ -11,7 +11,8 @@ defmodule Notiert.Director.Tools do
       change_phase(),
       rewrite_section(),
       adjust_visual(),
-      show_ghost_cursor(),
+      show_cursor(),
+      hide_cursor(),
       add_margin_note(),
       request_browser_permission(),
       do_nothing()
@@ -24,7 +25,7 @@ defmodule Notiert.Director.Tools do
     %{
       "name" => "change_phase",
       "description" =>
-        "Transition the session to a different phase. You control the narrative arc — move to the next phase when the moment is right, or skip ahead or pull back based on how the visitor is responding. Phase changes affect what UI elements are visible (toolbar, ghost viewer) and set the tone for your subsequent actions. Read the phase guidance carefully before transitioning.",
+        "Transition the session to a different phase. You control the narrative arc — move to the next phase when the moment is right, or pull back based on how the visitor is responding. Phases control what tools are available and the intensity of your actions. Read the phase guidance carefully before transitioning.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
@@ -84,22 +85,22 @@ defmodule Notiert.Director.Tools do
     %{
       "name" => "adjust_visual",
       "description" =>
-        "Modify CSS custom properties to shift visual presentation. Changes animate smoothly via CSS transitions. Subtle changes early are more unsettling than dramatic ones.",
+        "Modify CSS custom properties to shift visual presentation. Changes animate smoothly. Creative uses: shift --accent to a visitor's national colors (infer from timezone/location), change --bg to match their dark mode preference, warm up --fg-secondary for late-night readers, shift --cursor-color to stand out against the page. Can target a single section or the whole page. Subtle early changes are more unsettling than dramatic ones.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
           "css_variables" => %{
             "type" => "object",
             "description" =>
-              "Map of CSS variable names to new values. Available: --bg, --fg, --fg-secondary, --accent, --surface, --border, --font-size-body, --line-height, --section-gap, --transition-speed, --cursor-color, --highlight-bg, --margin-note-bg"
+              "Map of CSS variable names to new values. Available: --bg (page background), --fg (text color), --fg-secondary (secondary text), --accent (links, highlights — try national colors), --surface (tag backgrounds), --border (separators), --font-size-body, --line-height, --section-gap, --transition-speed (animation duration), --cursor-color (your cursor), --highlight-bg, --margin-note-bg. Values are CSS: colors as hex (#1a73e8), sizes as px/em/rem."
           },
           "transition_duration_ms" => %{
             "type" => "integer",
-            "description" => "Override transition duration for this change (milliseconds)"
+            "description" => "Override transition duration for this change (milliseconds). Slow transitions (2000-4000ms) are more subtle."
           },
           "target" => %{
             "type" => "string",
-            "description" => "'global' to set on :root, or a section_id to scope changes"
+            "description" => "'global' to set on :root, or a section_id to scope changes to one section"
           }
         },
         "required" => ["css_variables"]
@@ -107,30 +108,25 @@ defmodule Notiert.Director.Tools do
     }
   end
 
-  defp show_ghost_cursor do
+  defp show_cursor do
     %{
-      "name" => "show_ghost_cursor",
+      "name" => "show_cursor",
       "description" =>
-        "Display a second cursor on the page with a name label, like a Google Docs collaborator. Extremely unsettling.",
+        "Show your editing cursor on the page, like a Google Docs collaborator's cursor. It appears at the section you're about to edit — pair this with a rewrite_section call to show the cursor moving to a section then editing it. One cursor. Call again to move it.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
-          "cursor_label" => %{
+          "label" => %{
             "type" => "string",
-            "description" => "Name shown on the cursor label (e.g. 'notiert', 'Henry')"
-          },
-          "behavior" => %{
-            "type" => "string",
-            "enum" => ["follow_user", "move_to_element"],
-            "description" =>
-              "follow_user: trails real cursor with delay. move_to_element: positions at a specific section."
+            "description" => "Name shown on the cursor (e.g. 'notiert', 'Henry'). Keep it short."
           },
           "target" => %{
             "type" => "string",
-            "description" => "For move_to_element: section_id to position near"
+            "enum" => ["header", "about", "experience", "skills", "projects", "education"],
+            "description" => "Section to position the cursor at. Should match the section you're editing."
           }
         },
-        "required" => ["cursor_label", "behavior"]
+        "required" => ["label", "target"]
       }
     }
   end
@@ -162,11 +158,29 @@ defmodule Notiert.Director.Tools do
     }
   end
 
+  defp hide_cursor do
+    %{
+      "name" => "hide_cursor",
+      "description" =>
+        "Hide the cursor. Use this when you want to stop drawing attention to the cursor — for example after finishing a series of edits, or when moving to a quieter phase.",
+      "input_schema" => %{
+        "type" => "object",
+        "properties" => %{
+          "reason" => %{
+            "type" => "string",
+            "description" => "Why you're hiding the cursor."
+          }
+        },
+        "required" => ["reason"]
+      }
+    }
+  end
+
   defp request_browser_permission do
     %{
       "name" => "request_browser_permission",
       "description" =>
-        "Trigger a browser permission dialog. Geolocation enables location-aware CV content — use it when it would make the CV more relevant. Camera and microphone require: climax phase, 3+ minutes of active engagement, interaction with 3+ sections. Most sessions should never use camera/mic.",
+        "Trigger a browser permission dialog. This is ASYNC: you fire it now, and you'll be re-triggered when the visitor responds (with timing data showing how long they hesitated). Geolocation enables location-aware CV content. Camera/microphone: climax phase only, 3+ min, 3+ sections. You cannot provide on_granted/on_denied content here — instead, react when you're re-triggered with the permission_result event.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
@@ -174,23 +188,15 @@ defmodule Notiert.Director.Tools do
             "type" => "string",
             "enum" => ["geolocation", "camera", "microphone", "notifications"],
             "description" =>
-              "What to request. Geolocation for location-aware content. Camera/microphone: climax phase only, 3+ min engagement, 3+ sections visited. Notifications as a farewell."
+              "What to request. You'll be called back when the visitor responds."
           },
           "pre_request_content" => %{
             "type" => "string",
-            "description" => "Margin note shown before the dialog. Sets up the joke."
-          },
-          "on_granted_content" => %{
-            "type" => "string",
-            "description" => "Response if they allow it."
-          },
-          "on_denied_content" => %{
-            "type" => "string",
-            "description" => "Response if they deny. Should be funnier."
+            "description" => "Optional margin note shown before the dialog appears."
           },
           "target_section" => %{
             "type" => "string",
-            "description" => "Section to attach commentary to"
+            "description" => "Section to attach the pre-request margin note to"
           }
         },
         "required" => ["permission", "target_section"]

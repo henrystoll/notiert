@@ -32,13 +32,10 @@ defmodule NotiertWeb.CvLive do
         visual_overrides: %{},
         # Ghost cursor state
         ghost_cursor: nil,
-        # Toolbar visibility
-        toolbar_visible: false,
-        # Viewer avatars
-        viewer_you_visible: false,
-        viewer_ghost_visible: false,
         # Typing animation queue
-        typing: nil
+        typing: nil,
+        # Event log for reveal section
+        event_log: []
       )
 
     if connected?(socket) do
@@ -97,9 +94,13 @@ defmodule NotiertWeb.CvLive do
     socket =
       socket
       |> assign(phase: phase)
-      |> maybe_show_toolbar(phase)
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:event_log_update, event_log}, socket) do
+    {:noreply, assign(socket, event_log: event_log)}
   end
 
   @impl true
@@ -155,20 +156,18 @@ defmodule NotiertWeb.CvLive do
     })
   end
 
-  defp apply_director_action(%{"tool" => "show_ghost_cursor"} = action, socket) do
-    ghost = %{
-      label: action["cursor_label"],
-      behavior: action["behavior"],
-      target: action["target"]
-    }
+  defp apply_director_action(%{"tool" => "show_cursor"} = action, socket) do
+    cursor = %{label: action["label"], target: action["target"]}
 
     socket
-    |> assign(ghost_cursor: ghost)
-    |> push_event("show_ghost_cursor", %{
-      cursor_label: ghost.label,
-      behavior: ghost.behavior,
-      target: ghost.target
-    })
+    |> assign(ghost_cursor: cursor)
+    |> push_event("show_cursor", %{label: cursor.label, target: cursor.target})
+  end
+
+  defp apply_director_action(%{"tool" => "hide_cursor"}, socket) do
+    socket
+    |> assign(ghost_cursor: nil)
+    |> push_event("hide_cursor", %{})
   end
 
   defp apply_director_action(%{"tool" => "request_browser_permission"} = action, socket) do
@@ -185,13 +184,6 @@ defmodule NotiertWeb.CvLive do
 
   defp apply_director_action(_unknown, socket), do: socket
 
-  defp maybe_show_toolbar(socket, phase) do
-    socket
-    |> assign(toolbar_visible: Phase.toolbar_visible?(phase))
-    |> assign(viewer_you_visible: Phase.toolbar_visible?(phase))
-    |> assign(viewer_ghost_visible: Phase.ghost_viewer_visible?(phase))
-  end
-
   defp generate_session_id do
     :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
   end
@@ -199,43 +191,62 @@ defmodule NotiertWeb.CvLive do
   defp default_sections do
     %{
       "about" =>
-        "Data Scientist at Danske Bank working on agentic AI systems, LLM observability, and responsible AI in regulated financial services. Building under an Agentic Development Life Cycle (ADLC) framework. External lecturer at Copenhagen Business School, teaching programming for the MSc in Business Administration and Data Science programme. Background spanning SAP consulting, AI project leadership, supply chain management, and United Nations work.",
+        "Deliver scalable AI systems where people, data, and systems meet real-world problems: moving fast, cutting through complexity, and driving impact to overcome inertia. Background spans startup-style execution, where speed and vision drive results, and enterprise-scale architecture, where scale, compliance and reusability are critical. Experienced in leading teams, managing stakeholders, and delivering end-to-end solutions in cloud-native environments.",
       "experience" => [
         %{
-          role: "Product Owner / Data Scientist",
+          role: "Senior Data Scientist",
           company: "Danske Bank, Copenhagen",
-          period: "2023–Present",
+          period: "2024–Present",
           description:
-            "Leading agentic AI initiatives in a regulated banking environment. Designing LLM observability infrastructure with LangSmith/Langfuse. Building multi-agent credit decisioning systems. Navigating the intersection of innovation and compliance."
+            "GenAI Engineer & Architect. Design and implementation of GenAI RAG platform solutions. Driving enterprise reference architecture for scalable Agent Orchestration and Tools with A2A and MCP, balancing rapid time-to-value with long-term reliability. Advocated approach to 350 colleagues across the bank."
         },
         %{
-          role: "External Lecturer",
-          company: "Copenhagen Business School",
-          period: "2026–Present",
+          role: "Data Scientist",
+          company: "UNHCR, Copenhagen",
+          period: "2023–2024",
           description:
-            "Teaching Computational Intelligence for Business to MSc students. Curriculum design emphasising hacker mindset pedagogy with progressive portfolio assessment and real-world data infrastructure."
+            "Architected and deployed cloud-native, event-driven systems for multilingual hate detection using Llama2/Mistral, capable of classifying 10,000 posts/minute. Built MLOps pipelines on AWS and GCP. Technical lead for external developer team."
         },
         %{
-          role: "AI & Technology Consultant",
-          company: "Various, International",
-          period: "2018–2023",
+          role: "CTO",
+          company: "Stealth Startup, Copenhagen",
+          period: "2023",
           description:
-            "SAP consulting (technical through board-level), blockchain project leadership, cross-platform app development, supply chain optimisation, United Nations advisory work."
+            "Built an integrated employee-manager chatbot and coach. Designed and delivered cloud-native SaaS from whiteboard to pilot with 40 users, leveraging LLM orchestration, RAG, FastAPI and Svelte."
+        },
+        %{
+          role: "Technology Consultant",
+          company: "UNICEF, Copenhagen",
+          period: "2021–2023",
+          description:
+            "Technical lead for supply visibility solution in global NGO logistics. Led cross-border implementation in 10+ countries. Managed a team of 5, designed scalable mobile solutions for 9,000+ NGO partners. Built with Nest, React and Databricks on Azure."
+        },
+        %{
+          role: "Business Informatics Student",
+          company: "SAP, Walldorf & Palo Alto",
+          period: "2016–2019",
+          description:
+            "Technology and strategy consultant across Finance, Insurance, Automotive, Manufacturing and Consumer Goods in Germany and the US. Focus on AI and ERP system integration. Part-time assistance role to a Supervisory Board member."
         }
       ],
       "skills" => [
-        "Python",
-        "Elixir",
-        "TypeScript",
+        "Python/FastAPI",
+        "LangChain/RAG",
+        "Agent Orchestration",
+        "AWS",
+        "GCP",
+        "Azure",
+        "Terraform/CDK",
+        "Docker",
         "Kubernetes",
-        "LLM Orchestration",
-        "LangChain/LangSmith",
-        "AWS Bedrock",
-        "Talos Linux",
-        "Cilium/Flux GitOps",
-        "SAP",
-        "German",
-        "Danish"
+        "MLflow",
+        "TensorFlow/PyTorch",
+        "PostgreSQL",
+        "Node/Nest",
+        "React/Svelte",
+        "Elixir",
+        "German (native)",
+        "English (proficient)"
       ],
       "projects" => [
         %{
@@ -246,11 +257,11 @@ defmodule NotiertWeb.CvLive do
         %{
           name: "notiert",
           description:
-            "This website. A living CV that watches its visitors and rewrites itself in real-time using an LLM director agent. You are experiencing it right now."
+            "This website. A living CV that watches its visitors and rewrites itself in real-time using an LLM director agent."
         }
       ],
       "education" =>
-        "MSc Business Administration & Data Science — Copenhagen Business School"
+        "M.Sc. Data Science & Business Administration — Copenhagen Business School (top 5%). B.Sc. Business Informatics — DHBW (top 10%). Additional coursework: Big Data Management (ITU), Advanced NLP (University of Copenhagen)."
     }
   end
 
@@ -260,20 +271,6 @@ defmodule NotiertWeb.CvLive do
     <div id="notiert-app" phx-hook="Notiert" data-debug={to_string(@debug)}>
       <%!-- Version label --%>
       <div class="version-label">notiert v<%= @version %></div>
-      <%!-- Google Docs-style toolbar --%>
-      <div id="toolbar" class={"toolbar #{if @toolbar_visible, do: "visible", else: ""}"}>
-        <div class="toolbar-inner">
-          <span class="doc-title">Henry Stoll — Curriculum Vitae</span>
-          <div class="viewer-avatars">
-            <div class={"viewer-avatar viewer-you #{if @viewer_you_visible, do: "visible", else: ""}"} title="You">
-              ?
-            </div>
-            <div class={"viewer-avatar viewer-ghost #{if @viewer_ghost_visible, do: "visible", else: ""}"} title="notiert">
-              N
-            </div>
-          </div>
-        </div>
-      </div>
 
       <%!-- Ghost cursor --%>
       <div id="ghost-cursor" class={"ghost-cursor #{if @ghost_cursor, do: "visible", else: ""}"} phx-hook="GhostCursor">
@@ -286,11 +283,11 @@ defmodule NotiertWeb.CvLive do
         <%!-- Header --%>
         <section id="section-header" data-section="header" class="cv-section">
           <h1 class="cv-name">Henry Stoll</h1>
-          <p class="cv-subtitle">Data Scientist & Product Owner · Copenhagen, Denmark</p>
+          <p class="cv-subtitle">GenAI Engineer @Danske Bank | AI Architect</p>
           <p class="cv-links">
             <span class="cv-link">henrystoll.de</span>
             <span class="cv-separator">·</span>
-            <span class="cv-location">Copenhagen, DK</span>
+            <span class="cv-location">Copenhagen, Denmark</span>
           </p>
         </section>
 
@@ -367,6 +364,14 @@ defmodule NotiertWeb.CvLive do
             <.margin_note content={note.content} author={note.author} section="education" />
           <% end %>
         </section>
+
+        <%!-- Reveal: interaction log --%>
+        <%= if @phase in [:overt, :climax] and @event_log != [] do %>
+          <section id="section-reveal" data-section="reveal" class="cv-section reveal-section">
+            <h2 class="cv-heading">Session Log</h2>
+            <pre class="reveal-log"><%= Notiert.Director.Agent.format_notebook(@event_log) %></pre>
+          </section>
+        <% end %>
 
         <%!-- Footer --%>
         <footer class="cv-footer">

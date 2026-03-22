@@ -81,45 +81,55 @@ export function adjustVisual({ css_variables, transition_duration_ms, target }) 
   }
 }
 
-// ---- Ghost cursor ----
-export function showGhostCursor(el, { cursor_label, behavior, target }) {
-  const ghostEl = document.getElementById("ghost-cursor");
-  if (!ghostEl) return;
+// ---- Cursor ----
+// Single cursor that positions near a target section.
+// Called again to move it. Tracks scroll + resize for mobile Safari.
+export function showCursor(el, { label, target }) {
+  const cursorEl = document.getElementById("ghost-cursor");
+  if (!cursorEl) return;
+
+  // Clean up previous listeners
+  if (cursorEl._cleanup) cursorEl._cleanup();
 
   // Update label
-  const labelEl = ghostEl.querySelector(".ghost-cursor-label");
-  if (labelEl) labelEl.textContent = cursor_label;
+  const labelEl = cursorEl.querySelector(".ghost-cursor-label");
+  if (labelEl) labelEl.textContent = label;
 
-  ghostEl.classList.add("visible");
+  cursorEl.classList.add("visible");
 
-  if (behavior === "follow_user") {
-    // Clean up previous listener if any
-    if (ghostEl._cleanup) ghostEl._cleanup();
+  const targetEl = target ? document.getElementById(`section-${target}`) : null;
+  if (!targetEl) return;
 
-    const onMove = (e) => {
-      setTimeout(() => {
-        ghostEl.style.left = `${e.clientX + 20}px`;
-        ghostEl.style.top = `${e.clientY + 15}px`;
-      }, 400);
-    };
-    document.addEventListener("pointermove", onMove, { passive: true });
-    ghostEl._cleanup = () => document.removeEventListener("pointermove", onMove);
-  } else if (behavior === "move_to_element" && target) {
-    // Clean up previous listener if any
-    if (ghostEl._cleanup) ghostEl._cleanup();
+  let ticking = false;
+  const updatePos = () => {
+    const rect = targetEl.getBoundingClientRect();
+    cursorEl.style.left = `${rect.left + rect.width * 0.3}px`;
+    cursorEl.style.top = `${rect.top + 20}px`;
+    ticking = false;
+  };
 
-    const targetEl = document.getElementById(`section-${target}`);
-    if (targetEl) {
-      const updatePos = () => {
-        const rect = targetEl.getBoundingClientRect();
-        ghostEl.style.left = `${rect.left + rect.width * 0.3}px`;
-        ghostEl.style.top = `${rect.top + 20}px`;
-      };
-      updatePos();
-      document.addEventListener("scroll", updatePos, { passive: true });
-      ghostEl._cleanup = () => document.removeEventListener("scroll", updatePos);
+  const onScroll = () => {
+    if (!ticking) {
+      ticking = true;
+      requestAnimationFrame(updatePos);
     }
-  }
+  };
+
+  updatePos();
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
+  cursorEl._cleanup = () => {
+    window.removeEventListener("scroll", onScroll);
+    window.removeEventListener("resize", onScroll);
+  };
+}
+
+// ---- Hide cursor ----
+export function hideCursor() {
+  const cursorEl = document.getElementById("ghost-cursor");
+  if (!cursorEl) return;
+  if (cursorEl._cleanup) cursorEl._cleanup();
+  cursorEl.classList.remove("visible");
 }
 
 // ---- Margin notes (client-side animation) ----
@@ -183,7 +193,7 @@ export function requestPermission(hook, { permission, pre_request_content, on_gr
         const result = await Notification.requestPermission();
         if (result === "granted") {
           new Notification("Henry Stoll", {
-            body: "Data Scientist & Product Owner. Available for interesting conversations.",
+            body: "GenAI Engineer & AI Architect. Available for interesting conversations.",
             icon: "data:text/plain,👁",
           });
         }
