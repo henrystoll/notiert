@@ -81,86 +81,55 @@ export function adjustVisual({ css_variables, transition_duration_ms, target }) 
   }
 }
 
-// ---- Ghost cursor ----
-export function showGhostCursor(el, { cursor_label, behavior, target }) {
-  const ghostEl = document.getElementById("ghost-cursor");
-  if (!ghostEl) return;
+// ---- Cursor ----
+// Single cursor that positions near a target section.
+// Called again to move it. Tracks scroll + resize for mobile Safari.
+export function showCursor(el, { label, target }) {
+  const cursorEl = document.getElementById("ghost-cursor");
+  if (!cursorEl) return;
 
-  // Clean up previous listener/animation
-  if (ghostEl._cleanup) ghostEl._cleanup();
+  // Clean up previous listeners
+  if (cursorEl._cleanup) cursorEl._cleanup();
 
   // Update label
-  const labelEl = ghostEl.querySelector(".ghost-cursor-label");
-  if (labelEl) labelEl.textContent = cursor_label;
+  const labelEl = cursorEl.querySelector(".ghost-cursor-label");
+  if (labelEl) labelEl.textContent = label;
 
-  ghostEl.classList.add("visible");
+  cursorEl.classList.add("visible");
 
-  if (behavior === "follow_user") {
-    let targetX = 0, targetY = 0, currentX = 0, currentY = 0;
-    let animating = false;
+  const targetEl = target ? document.getElementById(`section-${target}`) : null;
+  if (!targetEl) return;
 
-    const onMove = (e) => {
-      // Use touch position on mobile, pointer on desktop
-      const x = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
-      const y = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
-      targetX = x + 20;
-      targetY = y + 15;
+  let ticking = false;
+  const updatePos = () => {
+    const rect = targetEl.getBoundingClientRect();
+    cursorEl.style.left = `${rect.left + rect.width * 0.3}px`;
+    cursorEl.style.top = `${rect.top + 20}px`;
+    ticking = false;
+  };
 
-      if (!animating) {
-        animating = true;
-        animate();
-      }
-    };
-
-    const animate = () => {
-      // Smooth lerp toward target
-      currentX += (targetX - currentX) * 0.15;
-      currentY += (targetY - currentY) * 0.15;
-      ghostEl.style.left = `${currentX}px`;
-      ghostEl.style.top = `${currentY}px`;
-
-      if (Math.abs(targetX - currentX) > 0.5 || Math.abs(targetY - currentY) > 0.5) {
-        ghostEl._raf = requestAnimationFrame(animate);
-      } else {
-        animating = false;
-      }
-    };
-
-    document.addEventListener("pointermove", onMove, { passive: true });
-    document.addEventListener("touchmove", onMove, { passive: true });
-    ghostEl._cleanup = () => {
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("touchmove", onMove);
-      if (ghostEl._raf) cancelAnimationFrame(ghostEl._raf);
-    };
-  } else if (behavior === "move_to_element" && target) {
-    const targetEl = document.getElementById(`section-${target}`);
-    if (targetEl) {
-      let ticking = false;
-      const updatePos = () => {
-        const rect = targetEl.getBoundingClientRect();
-        ghostEl.style.left = `${rect.left + rect.width * 0.3}px`;
-        ghostEl.style.top = `${rect.top + 20}px`;
-        ticking = false;
-      };
-
-      const onScroll = () => {
-        if (!ticking) {
-          ticking = true;
-          requestAnimationFrame(updatePos);
-        }
-      };
-
-      updatePos();
-      window.addEventListener("scroll", onScroll, { passive: true });
-      // Also update on resize (mobile address bar show/hide)
-      window.addEventListener("resize", onScroll, { passive: true });
-      ghostEl._cleanup = () => {
-        window.removeEventListener("scroll", onScroll);
-        window.removeEventListener("resize", onScroll);
-      };
+  const onScroll = () => {
+    if (!ticking) {
+      ticking = true;
+      requestAnimationFrame(updatePos);
     }
-  }
+  };
+
+  updatePos();
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
+  cursorEl._cleanup = () => {
+    window.removeEventListener("scroll", onScroll);
+    window.removeEventListener("resize", onScroll);
+  };
+}
+
+// ---- Hide cursor ----
+export function hideCursor() {
+  const cursorEl = document.getElementById("ghost-cursor");
+  if (!cursorEl) return;
+  if (cursorEl._cleanup) cursorEl._cleanup();
+  cursorEl.classList.remove("visible");
 }
 
 // ---- Margin notes (client-side animation) ----

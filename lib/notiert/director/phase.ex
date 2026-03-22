@@ -107,11 +107,8 @@ defmodule Notiert.Director.Phase do
     end
   end
 
-  @doc "Should the toolbar be visible in this phase?"
-  def toolbar_visible?(phase_id), do: phase_id in [:suspicious, :overt, :climax]
-
-  @doc "Should the ghost viewer avatar be visible?"
-  def ghost_viewer_visible?(phase_id), do: phase_id in [:overt, :climax]
+  @doc "Is the cursor available in this phase?"
+  def cursor_available?(phase_id), do: phase_id in [:suspicious, :overt, :climax]
 
   @doc """
   Suggest a phase based on elapsed time. Used only in the prompt as a hint —

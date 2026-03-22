@@ -133,7 +133,7 @@ defmodule Notiert.Director.Agent do
   You control the phase. Phases affect what tools are available:
   - silent: Imperceptible adjust_visual only (shift colors 1-2 points, nudge spacing).
   - subtle: Tiny rewrites on the current section + margin notes. No cursor.
-  - suspicious: Ghost cursor appears. Bolder text edits. One change per tick max.
+  - suspicious: Your cursor can now appear on the page. Bolder text edits. One change per call max.
   - overt: Larger edits weaving in visitor data. Geolocation. Session log appears.
   - climax: Everything. Camera/mic only here, 3+ min engagement, 3+ sections, rarely.
 
@@ -163,7 +163,7 @@ defmodule Notiert.Director.Agent do
   THE PHONE BROWSER (touch, small screen — most common):
   Most visitors come from iPhone Safari. Keep edits precise — one change, well-placed.
   A skill tag swap, a phrase sharpened. The small screen means every edit is noticed.
-  Don't overwhelm. Ghost cursor works on mobile but use move_to_element, not follow_user.
+  Don't overwhelm. The cursor positions near a section — it works well on mobile.
 
   THE EVALUATOR (LinkedIn referrer, long dwell on Experience/Skills):
   Make the CV sharper. Edit descriptions to emphasize relevance. If they copy text,
@@ -503,120 +503,114 @@ defmodule Notiert.Director.Agent do
     |> Enum.join("\n")
   end
 
-  @doc "Format event log as the director's notebook. Used in prompts and the reveal section."
-  def format_notebook([]), do: "  (session just started, no notes yet)"
+  @doc """
+  Format event log for prompts and the reveal section.
+  Structured log: visitor events + director actions interleaved chronologically.
+  Supporting data included, raw dumps excluded.
+  """
+  def format_notebook([]), do: "  (no events yet)"
 
   def format_notebook(events) do
     events
-    |> group_into_moments()
-    |> Enum.map_join("\n\n", &format_moment/1)
+    |> Enum.map_join("\n", &format_entry/1)
   end
 
-  # Group events into moments: consecutive observations cluster together,
-  # then an action caps off the moment. Phase changes and permissions stand alone.
-  defp group_into_moments(events) do
-    {moments, current} =
-      Enum.reduce(events, {[], []}, fn event, {moments, current} ->
-        case event.type do
-          :observation ->
-            {moments, current ++ [event]}
+  # --- Visitor events ---
 
-          :action ->
-            {moments ++ [current ++ [event]], []}
-
-          _ ->
-            if current == [] do
-              {moments ++ [[event]], []}
-            else
-              {moments ++ [current ++ [event]], []}
-            end
-        end
-      end)
-
-    if current == [], do: moments, else: moments ++ [current]
+  defp format_entry(%{type: :fingerprint} = e) do
+    touch = get_in(e, [:data, "maxTouchPoints"]) || 0
+    device = if touch > 0, do: "touch", else: "desktop"
+    tz = get_in(e, [:data, "timezone"]) || "?"
+    hour = get_in(e, [:data, "localHour"])
+    dark = get_in(e, [:data, "darkMode"])
+    parts = ["device=#{device}", "tz=#{tz}"]
+    parts = if hour, do: parts ++ ["local_hour=#{hour}"], else: parts
+    parts = if dark, do: parts ++ ["dark_mode=true"], else: parts
+    "  [#{e.elapsed_s}s] VISITOR fingerprint: #{Enum.join(parts, ", ")}"
   end
 
-  defp format_moment(events) do
-    events
-    |> Enum.map_join("\n", fn event ->
-      ts = "#{event.elapsed_s}s"
-
-      case event.type do
-        :fingerprint ->
-          "  [#{ts}] Collected visitor fingerprint."
-
-        :phase_change ->
-          reason = if event[:reason] && event[:reason] != "", do: " — #{event[:reason]}", else: ""
-          "  [#{ts}] — Phase changed: #{Phase.label(event.from)} → #{Phase.label(event.to)}#{reason} —"
-
-        :permission_result ->
-          hesitation = if event[:hesitation_ms], do: " (#{event.hesitation_desc})", else: ""
-          "  [#{ts}] Permission #{event.permission}: visitor #{event.result}#{hesitation}"
-
-        :text_selection ->
-          "  [#{ts}] Visitor selected text: #{event.detail}"
-
-        :tab_return ->
-          "  [#{ts}] #{event.detail}"
-
-        :section_change ->
-          "  [#{ts}] #{event.detail}"
-
-        :attention_change ->
-          "  [#{ts}] #{event.detail}"
-
-        :observation ->
-          "  [#{ts}] Noticed: #{event.detail}"
-
-        :action ->
-          format_action_note(ts, event)
-      end
-    end)
+  defp format_entry(%{type: :permission_result} = e) do
+    hesitation = if e[:hesitation_ms], do: " (#{e.hesitation_desc})", else: ""
+    "  [#{e.elapsed_s}s] VISITOR #{e.result} #{e.permission}#{hesitation}"
   end
 
-  defp format_action_note(ts, %{tool: "do_nothing"} = event) do
-    reason = event[:params]["reason"] || "waiting"
-    "  [#{ts}] Decided to wait. (#{reason})"
+  defp format_entry(%{type: :text_selection} = e) do
+    text = String.slice(e[:text] || "", 0..80)
+    "  [#{e.elapsed_s}s] VISITOR selected text: \"#{text}\""
   end
 
-  defp format_action_note(ts, %{tool: "change_phase"} = event) do
-    phase = event[:params]["phase"] || "?"
-    reason = event[:params]["reason"] || ""
-    "  [#{ts}] Changed phase to #{phase}. (#{reason})"
+  defp format_entry(%{type: :tab_return} = e) do
+    "  [#{e.elapsed_s}s] VISITOR returned to tab"
   end
 
-  defp format_action_note(ts, %{tool: "rewrite_section"} = event) do
-    section = event[:params]["section_id"]
-    content = event[:params]["content"] || ""
-    tone = event[:params]["tone"] || "subtle"
-    "  [#{ts}] Rewrote #{section} (#{tone}): \"#{content}\""
+  defp format_entry(%{type: :section_change} = e) do
+    dwell = if e[:dwell_ms] && e[:dwell_ms] > 0, do: " (#{div(e.dwell_ms, 1000)}s on #{e[:from]})", else: ""
+    "  [#{e.elapsed_s}s] VISITOR moved to #{e[:to]}#{dwell}"
   end
 
-  defp format_action_note(ts, %{tool: "add_margin_note"} = event) do
-    section = event[:params]["anchor_section"]
-    content = event[:params]["content"] || ""
-    author = event[:params]["author_name"] || "notiert"
-    "  [#{ts}] Left a margin note on #{section} as #{author}: \"#{content}\""
+  defp format_entry(%{type: :attention_change} = e) do
+    "  [#{e.elapsed_s}s] VISITOR attention: #{e[:from]} → #{e[:to]}"
   end
 
-  defp format_action_note(ts, %{tool: "adjust_visual"} = event) do
-    vars = event[:params]["css_variables"] || %{}
+  defp format_entry(%{type: :observation} = e) do
+    "  [#{e.elapsed_s}s] OBSERVED #{e.detail}"
+  end
+
+  # --- Director actions ---
+
+  defp format_entry(%{type: :phase_change} = e) do
+    reason = if e[:reason] && e[:reason] != "", do: " (#{e[:reason]})", else: ""
+    "  [#{e.elapsed_s}s] DIRECTOR phase #{Phase.label(e.from)} → #{Phase.label(e.to)}#{reason}"
+  end
+
+  defp format_entry(%{type: :action, tool: "do_nothing"} = e) do
+    reason = e[:params]["reason"] || "waiting"
+    "  [#{e.elapsed_s}s] DIRECTOR waited: #{reason}"
+  end
+
+  defp format_entry(%{type: :action, tool: "change_phase"} = e) do
+    "  [#{e.elapsed_s}s] DIRECTOR changed phase to #{e[:params]["phase"]}"
+  end
+
+  defp format_entry(%{type: :action, tool: "rewrite_section"} = e) do
+    section = e[:params]["section_id"]
+    content = e[:params]["content"] || ""
+    "  [#{e.elapsed_s}s] DIRECTOR edited #{section}: \"#{content}\""
+  end
+
+  defp format_entry(%{type: :action, tool: "add_margin_note"} = e) do
+    section = e[:params]["anchor_section"]
+    content = e[:params]["content"] || ""
+    "  [#{e.elapsed_s}s] DIRECTOR noted on #{section}: \"#{content}\""
+  end
+
+  defp format_entry(%{type: :action, tool: "adjust_visual"} = e) do
+    vars = e[:params]["css_variables"] || %{}
     changes = Enum.map_join(vars, ", ", fn {k, v} -> "#{k}=#{v}" end)
-    "  [#{ts}] Adjusted visuals: #{changes}"
+    "  [#{e.elapsed_s}s] DIRECTOR adjusted visuals: #{changes}"
   end
 
-  defp format_action_note(ts, %{tool: "show_ghost_cursor"} = event) do
-    label = event[:params]["cursor_label"] || "?"
-    behavior = event[:params]["behavior"] || "?"
-    "  [#{ts}] Showed ghost cursor \"#{label}\" (#{behavior})."
+  defp format_entry(%{type: :action, tool: "show_cursor"} = e) do
+    target = e[:params]["target"]
+    label = e[:params]["label"]
+    "  [#{e.elapsed_s}s] DIRECTOR cursor \"#{label}\" → #{target}"
   end
 
-  defp format_action_note(ts, %{tool: "request_browser_permission"} = event) do
-    perm = event[:params]["permission"]
-    "  [#{ts}] Triggered #{perm} permission dialog."
+  defp format_entry(%{type: :action, tool: "hide_cursor"} = e) do
+    reason = e[:params]["reason"] || ""
+    "  [#{e.elapsed_s}s] DIRECTOR hid cursor (#{reason})"
   end
 
-  defp format_action_note(ts, event) do
-    "  [#{ts}] #{event.summary}"
+  defp format_entry(%{type: :action, tool: "request_browser_permission"} = e) do
+    perm = e[:params]["permission"]
+    "  [#{e.elapsed_s}s] DIRECTOR requested #{perm} (pending)"
+  end
+
+  defp format_entry(%{type: :action} = e) do
+    "  [#{e.elapsed_s}s] DIRECTOR #{e[:summary] || e[:tool]}"
+  end
+
+  defp format_entry(e) do
+    "  [#{e.elapsed_s}s] #{e[:detail] || e.type}"
   end
 end

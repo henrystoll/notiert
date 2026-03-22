@@ -11,7 +11,8 @@ defmodule Notiert.Director.Tools do
       change_phase(),
       rewrite_section(),
       adjust_visual(),
-      show_ghost_cursor(),
+      show_cursor(),
+      hide_cursor(),
       add_margin_note(),
       request_browser_permission(),
       do_nothing()
@@ -84,22 +85,22 @@ defmodule Notiert.Director.Tools do
     %{
       "name" => "adjust_visual",
       "description" =>
-        "Modify CSS custom properties to shift visual presentation. Changes animate smoothly via CSS transitions. Subtle changes early are more unsettling than dramatic ones.",
+        "Modify CSS custom properties to shift visual presentation. Changes animate smoothly. Creative uses: shift --accent to a visitor's national colors (infer from timezone/location), change --bg to match their dark mode preference, warm up --fg-secondary for late-night readers, shift --cursor-color to stand out against the page. Can target a single section or the whole page. Subtle early changes are more unsettling than dramatic ones.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
           "css_variables" => %{
             "type" => "object",
             "description" =>
-              "Map of CSS variable names to new values. Available: --bg, --fg, --fg-secondary, --accent, --surface, --border, --font-size-body, --line-height, --section-gap, --transition-speed, --cursor-color, --highlight-bg, --margin-note-bg"
+              "Map of CSS variable names to new values. Available: --bg (page background), --fg (text color), --fg-secondary (secondary text), --accent (links, highlights — try national colors), --surface (tag backgrounds), --border (separators), --font-size-body, --line-height, --section-gap, --transition-speed (animation duration), --cursor-color (your cursor), --highlight-bg, --margin-note-bg. Values are CSS: colors as hex (#1a73e8), sizes as px/em/rem."
           },
           "transition_duration_ms" => %{
             "type" => "integer",
-            "description" => "Override transition duration for this change (milliseconds)"
+            "description" => "Override transition duration for this change (milliseconds). Slow transitions (2000-4000ms) are more subtle."
           },
           "target" => %{
             "type" => "string",
-            "description" => "'global' to set on :root, or a section_id to scope changes"
+            "description" => "'global' to set on :root, or a section_id to scope changes to one section"
           }
         },
         "required" => ["css_variables"]
@@ -107,30 +108,25 @@ defmodule Notiert.Director.Tools do
     }
   end
 
-  defp show_ghost_cursor do
+  defp show_cursor do
     %{
-      "name" => "show_ghost_cursor",
+      "name" => "show_cursor",
       "description" =>
-        "Display a second cursor on the page with a name label, like a Google Docs collaborator. Extremely unsettling.",
+        "Show your editing cursor on the page, like a Google Docs collaborator's cursor. It appears at the section you're about to edit — pair this with a rewrite_section call to show the cursor moving to a section then editing it. One cursor. Call again to move it.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
-          "cursor_label" => %{
+          "label" => %{
             "type" => "string",
-            "description" => "Name shown on the cursor label (e.g. 'notiert', 'Henry')"
-          },
-          "behavior" => %{
-            "type" => "string",
-            "enum" => ["follow_user", "move_to_element"],
-            "description" =>
-              "follow_user: trails real cursor with delay. move_to_element: positions at a specific section."
+            "description" => "Name shown on the cursor (e.g. 'notiert', 'Henry'). Keep it short."
           },
           "target" => %{
             "type" => "string",
-            "description" => "For move_to_element: section_id to position near"
+            "enum" => ["header", "about", "experience", "skills", "projects", "education"],
+            "description" => "Section to position the cursor at. Should match the section you're editing."
           }
         },
-        "required" => ["cursor_label", "behavior"]
+        "required" => ["label", "target"]
       }
     }
   end
@@ -158,6 +154,24 @@ defmodule Notiert.Director.Tools do
           }
         },
         "required" => ["anchor_section", "content"]
+      }
+    }
+  end
+
+  defp hide_cursor do
+    %{
+      "name" => "hide_cursor",
+      "description" =>
+        "Hide the cursor. Use this when you want to stop drawing attention to the cursor — for example after finishing a series of edits, or when moving to a quieter phase.",
+      "input_schema" => %{
+        "type" => "object",
+        "properties" => %{
+          "reason" => %{
+            "type" => "string",
+            "description" => "Why you're hiding the cursor."
+          }
+        },
+        "required" => ["reason"]
       }
     }
   end

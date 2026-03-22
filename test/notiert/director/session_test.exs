@@ -4,7 +4,6 @@ defmodule Notiert.Director.SessionTest do
   alias Notiert.Director.Session
 
   setup do
-    # Ensure registry and supervisor are running (they're started by the application)
     session_id = "test-#{System.unique_integer([:positive])}"
     {:ok, session_id: session_id}
   end
@@ -22,7 +21,7 @@ defmodule Notiert.Director.SessionTest do
   end
 
   describe "update_fingerprint/2" do
-    test "accepts fingerprint data without crashing", %{session_id: session_id} do
+    test "accepts fingerprint and triggers director", %{session_id: session_id} do
       {:ok, _pid} =
         DynamicSupervisor.start_child(
           Notiert.SessionSupervisor,
@@ -41,20 +40,21 @@ defmodule Notiert.Director.SessionTest do
       }
 
       assert :ok == Session.update_fingerprint(session_id, fingerprint)
-      # Give the cast time to process
-      Process.sleep(50)
+      # Fingerprint triggers a debounced director call
+      # With no API key, it returns do_nothing
+      assert_receive {:director_action, %{"tool" => "do_nothing"}}, 5_000
     end
   end
 
   describe "update_behavior/2" do
-    test "accepts behavior data and detects observations", %{session_id: session_id} do
+    test "detects section change and triggers director", %{session_id: session_id} do
       {:ok, _pid} =
         DynamicSupervisor.start_child(
           Notiert.SessionSupervisor,
           {Session, %{session_id: session_id, live_view_pid: self()}}
         )
 
-      # First behavior update establishes baseline
+      # First behavior establishes baseline
       Session.update_behavior(session_id, %{
         "attentionPattern" => "browsing",
         "currentSection" => "header",
@@ -63,12 +63,13 @@ defmodule Notiert.Director.SessionTest do
         "scrollVelocity" => 100,
         "tabAwayCount" => 0,
         "tabAwayTotalMs" => 0,
-        "textSelections" => []
+        "textSelections" => [],
+        "sectionDwells" => %{}
       })
 
       Process.sleep(50)
 
-      # Second update with changed attention should trigger observation
+      # Second update with section change triggers director
       Session.update_behavior(session_id, %{
         "attentionPattern" => "reading",
         "currentSection" => "about",
@@ -77,22 +78,23 @@ defmodule Notiert.Director.SessionTest do
         "scrollVelocity" => 50,
         "tabAwayCount" => 0,
         "tabAwayTotalMs" => 0,
-        "textSelections" => []
+        "textSelections" => [],
+        "sectionDwells" => %{"header" => %{"totalMs" => 3000, "entries" => 1}}
       })
 
-      Process.sleep(50)
+      # Should trigger director via debounce (section_change + attention_change)
+      assert_receive {:director_action, _}, 5_000
     end
   end
 
   describe "focus pausing" do
-    test "pauses ticks when visitor tabs away", %{session_id: session_id} do
+    test "pauses when visitor tabs away", %{session_id: session_id} do
       {:ok, _pid} =
         DynamicSupervisor.start_child(
           Notiert.SessionSupervisor,
           {Session, %{session_id: session_id, live_view_pid: self()}}
         )
 
-      # Establish focused baseline
       Session.update_behavior(session_id, %{
         "attentionPattern" => "browsing",
         "currentSection" => "header",
@@ -103,7 +105,6 @@ defmodule Notiert.Director.SessionTest do
 
       Process.sleep(50)
 
-      # Tab away
       Session.update_behavior(session_id, %{
         "attentionPattern" => "idle",
         "currentSection" => "header",
@@ -113,14 +114,11 @@ defmodule Notiert.Director.SessionTest do
       })
 
       Process.sleep(50)
-      # Session should be paused — no director_action messages should arrive
-      # (beyond what may have already been in flight)
     end
   end
 
   describe "session lifecycle" do
     test "session stops when LiveView process dies", %{session_id: session_id} do
-      # Spawn a temporary process to act as LiveView
       lv_pid = spawn(fn -> Process.sleep(10_000) end)
 
       {:ok, session_pid} =
@@ -130,31 +128,32 @@ defmodule Notiert.Director.SessionTest do
         )
 
       assert Process.alive?(session_pid)
-
-      # Kill the "LiveView"
       Process.exit(lv_pid, :kill)
       Process.sleep(100)
-
-      # Session should have stopped
       refute Process.alive?(session_pid)
     end
   end
 
-  describe "director actions" do
-    test "phase change actions are sent to LiveView", %{session_id: session_id} do
+  describe "permission timing" do
+    test "permission result triggers director immediately", %{session_id: session_id} do
       {:ok, _pid} =
         DynamicSupervisor.start_child(
           Notiert.SessionSupervisor,
           {Session, %{session_id: session_id, live_view_pid: self()}}
         )
 
-      # Simulate a director response with a phase change
-      # We can't easily call the director without an API key,
-      # but we can verify the session starts and the first tick fires
-      # (which will result in a do_nothing since no API key is set)
+      # Wait for initial trigger to complete
+      assert_receive {:director_action, _}, 5_000
 
-      # Wait for the first tick (3s delay + processing)
-      assert_receive {:director_action, %{"tool" => "do_nothing"}}, 5_000
+      # Simulate permission result
+      Session.update_permission(session_id, "geolocation", "granted", %{
+        "latitude" => 55.6761,
+        "longitude" => 12.5683,
+        "accuracy" => 20
+      })
+
+      # Permission results fire immediately (no debounce)
+      assert_receive {:director_action, _}, 5_000
     end
   end
 end

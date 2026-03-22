@@ -114,8 +114,12 @@ defmodule NotiertWeb.CvLive do
 
     mutations = Map.put(socket.assigns.mutations, section_id, content)
 
+    # Auto-show cursor at the section being edited (like Google Docs)
+    cursor = %{label: socket.assigns.ghost_cursor && socket.assigns.ghost_cursor.label || "notiert", target: section_id}
+
     socket
-    |> assign(mutations: mutations)
+    |> assign(mutations: mutations, ghost_cursor: cursor)
+    |> push_event("show_cursor", %{label: cursor.label, target: cursor.target})
     |> push_event("type_rewrite", %{
       section_id: section_id,
       content: content,
@@ -156,20 +160,18 @@ defmodule NotiertWeb.CvLive do
     })
   end
 
-  defp apply_director_action(%{"tool" => "show_ghost_cursor"} = action, socket) do
-    ghost = %{
-      label: action["cursor_label"],
-      behavior: action["behavior"],
-      target: action["target"]
-    }
+  defp apply_director_action(%{"tool" => "show_cursor"} = action, socket) do
+    cursor = %{label: action["label"], target: action["target"]}
 
     socket
-    |> assign(ghost_cursor: ghost)
-    |> push_event("show_ghost_cursor", %{
-      cursor_label: ghost.label,
-      behavior: ghost.behavior,
-      target: ghost.target
-    })
+    |> assign(ghost_cursor: cursor)
+    |> push_event("show_cursor", %{label: cursor.label, target: cursor.target})
+  end
+
+  defp apply_director_action(%{"tool" => "hide_cursor"}, socket) do
+    socket
+    |> assign(ghost_cursor: nil)
+    |> push_event("hide_cursor", %{})
   end
 
   defp apply_director_action(%{"tool" => "request_browser_permission"} = action, socket) do
