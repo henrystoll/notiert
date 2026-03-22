@@ -41,8 +41,8 @@ defmodule Notiert.MixProject do
     [
       setup: ["deps.get", "assets.setup", "assets.build"],
       "assets.setup": ["esbuild.install --if-missing"],
-      "assets.build": ["esbuild notiert"],
-      "assets.deploy": ["esbuild notiert --minify", "phx.digest"]
+      "assets.build": ["esbuild notiert", "esbuild notiert_css"],
+      "assets.deploy": ["esbuild notiert --minify", "esbuild notiert_css --minify", "phx.digest"]
     ]
   end
 end

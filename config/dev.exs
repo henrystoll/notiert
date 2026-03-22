@@ -7,7 +7,8 @@ config :notiert, NotiertWeb.Endpoint,
   debug_errors: true,
   secret_key_base: "dev-only-secret-key-base-that-is-at-least-64-bytes-long-for-phoenix-to-accept",
   watchers: [
-    esbuild: {Esbuild, :install_and_run, [:notiert, ~w(--sourcemap=inline --watch)]}
+    esbuild: {Esbuild, :install_and_run, [:notiert, ~w(--sourcemap=inline --watch)]},
+    esbuild_css: {Esbuild, :install_and_run, [:notiert_css, ~w(--watch)]}
   ]
 
 config :notiert, NotiertWeb.Endpoint,

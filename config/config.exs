@@ -16,6 +16,10 @@ config :esbuild,
     args: ~w(js/app.js --bundle --target=es2020 --outdir=../priv/static/assets),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+  ],
+  notiert_css: [
+    args: ~w(css/app.css --bundle --outdir=../priv/static/assets),
+    cd: Path.expand("../assets", __DIR__)
   ]
 
 config :logger, :console,
