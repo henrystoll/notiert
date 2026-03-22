@@ -15,7 +15,12 @@ if config_env() == :prod do
     url: [host: host, port: 443, scheme: "https"],
     http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}, port: port],
     secret_key_base: secret_key_base,
-    server: true
+    server: true,
+    check_origin: [
+      "https://#{host}",
+      "https://www.#{host}",
+      "https://notiert.fly.dev"
+    ]
 end
 
 config :notiert, :anthropic_api_key, System.get_env("ANTHROPIC_API_KEY")
