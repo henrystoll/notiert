@@ -42,3 +42,16 @@ mix test
 
 ## Debug Mode
 Add `?debug=1` to URL to see LLM-rewritten content highlighted in red.
+
+## Development Constraints
+
+**Everything must be testable and editable through Claude Code with instant deploy to Fly.io.**
+
+- All code changes must be verifiable without a local browser — use `mix test`, `mix compile`, and `mix format --check-formatted` as the feedback loop
+- Write ExUnit tests for all server-side logic (director agent, session process, tool definitions, LiveView events)
+- Use LiveView test helpers (`Phoenix.LiveViewTest`) to test the full mount → fingerprint → behavior → director action cycle without a browser
+- Keep the GitHub Actions deploy pipeline working: push to `main` → `flyctl deploy --remote-only` → live on henrystoll.de
+- Fly.io secrets (`ANTHROPIC_API_KEY`, `SECRET_KEY_BASE`) are set via `fly secrets set` — never committed
+- The Dockerfile must build the full release (multi-stage: compile → release → minimal runtime image)
+- No manual steps required beyond `git push` — the deploy is fully automated
+- When iterating, use `fly deploy` directly from Claude Code for instant deploys without waiting for CI
