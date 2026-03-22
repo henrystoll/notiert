@@ -114,12 +114,8 @@ defmodule NotiertWeb.CvLive do
 
     mutations = Map.put(socket.assigns.mutations, section_id, content)
 
-    # Auto-show cursor at the section being edited (like Google Docs)
-    cursor = %{label: socket.assigns.ghost_cursor && socket.assigns.ghost_cursor.label || "notiert", target: section_id}
-
     socket
-    |> assign(mutations: mutations, ghost_cursor: cursor)
-    |> push_event("show_cursor", %{label: cursor.label, target: cursor.target})
+    |> assign(mutations: mutations)
     |> push_event("type_rewrite", %{
       section_id: section_id,
       content: content,

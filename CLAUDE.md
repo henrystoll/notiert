@@ -29,7 +29,7 @@ One continuous log of both visitor events and director actions, chronologically 
 - Supporting data included (dwell times, hesitation ms), raw data excluded
 
 ### Single cursor
-One cursor element, positioned at the section being edited. Like a Google Docs collaborator cursor — it appears where the director is about to make an edit. No follow-user behavior (bad on mobile).
+One cursor element, fully director-controlled via `show_cursor` / `hide_cursor` tools. The code does nothing automatic — the director decides when to show/hide the cursor. System prompt instructs the director to pair cursor with edits (show cursor at section, then edit it).
 
 ### CSS variables for theming
 The director can adjust visual presentation via CSS custom properties. Creative uses:
