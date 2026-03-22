@@ -157,30 +157,27 @@ defmodule Notiert.Director.Agent do
     phase_guidance = phase_guidance(context.phase)
 
     """
-    CURRENT SESSION STATE
-    ====================
-    Time elapsed: #{context.elapsed_seconds}s
-    Tick number: #{context.tick}
-    Current phase: #{context.phase}
+    CURRENT STATE (#{context.elapsed_seconds}s into visit, tick #{context.tick}, phase #{context.phase})
+    ==================================================================================
 
-    VISITOR FINGERPRINT:
+    WHAT WE KNOW ABOUT THIS VISITOR:
     #{format_fingerprint(context.fingerprint)}
 
-    BEHAVIORAL MODEL:
+    WHAT THE VISITOR IS DOING RIGHT NOW:
     #{format_behavior(context.behavior)}
 
-    PERMISSION STATES:
+    PERMISSIONS:
     #{format_permissions(context.permissions)}
-
     #{format_enrichment(context.enrichment)}
 
-    PAGE MUTATIONS APPLIED:
+    WHAT THE PAGE CURRENTLY SHOWS (your edits so far):
     #{format_mutations(context.mutations)}
 
-    INTERACTION LOG (full session history):
-    #{format_event_log(context.event_log)}
+    YOUR NOTES — everything that happened this session, oldest first:
+    #{format_notebook(context.event_log)}
 
-    PHASE GUIDANCE:
+    ---
+    Based on the above notes, decide your next action. You can reference anything from your notes — the visitor's patterns, what you've already said, what they reacted to.
     #{phase_guidance}
     """
   end
@@ -286,32 +283,106 @@ defmodule Notiert.Director.Agent do
     |> Enum.join("\n")
   end
 
-  defp format_event_log([]), do: "  (none yet — session just started)"
+  defp format_notebook([]), do: "  (session just started, no notes yet)"
 
-  defp format_event_log(events) do
+  defp format_notebook(events) do
+    # Group events into entries. Each entry is a natural "moment" in the session —
+    # a cluster of observations followed by a decision and its outcome.
     events
-    |> Enum.map(fn event ->
-      case event.type do
-        :action ->
-          "  [#{event.elapsed_s}s] ACTION: #{event.summary}"
+    |> group_into_moments()
+    |> Enum.map_join("\n\n", &format_moment/1)
+  end
 
-        :observation ->
-          "  [#{event.elapsed_s}s] OBSERVED: #{event.detail}"
+  # Group events into moments: consecutive observations cluster together,
+  # then an action caps off the moment. Phase changes and permissions stand alone.
+  defp group_into_moments(events) do
+    {moments, current} =
+      Enum.reduce(events, {[], []}, fn event, {moments, current} ->
+        case event.type do
+          :observation ->
+            # Observations accumulate in the current moment
+            {moments, current ++ [event]}
+
+          :action ->
+            # An action closes the current moment
+            {moments ++ [current ++ [event]], []}
+
+          _ ->
+            # Phase changes, permissions, fingerprint — standalone moments
+            if current == [] do
+              {moments ++ [[event]], []}
+            else
+              {moments ++ [current ++ [event]], []}
+            end
+        end
+      end)
+
+    # Don't drop trailing observations
+    if current == [], do: moments, else: moments ++ [current]
+  end
+
+  defp format_moment(events) do
+    events
+    |> Enum.map_join("\n", fn event ->
+      ts = "#{event.elapsed_s}s"
+
+      case event.type do
+        :fingerprint ->
+          "  [#{ts}] Collected visitor fingerprint."
 
         :phase_change ->
-          "  [#{event.elapsed_s}s] PHASE: #{event.from} -> #{event.to}"
+          "  [#{ts}] — Phase #{event.from} → #{event.to} —"
 
         :permission ->
-          "  [#{event.elapsed_s}s] PERMISSION: #{event.permission} = #{event.result}"
+          "  [#{ts}] Asked for #{event.permission} → visitor #{event.result}."
 
-        :fingerprint ->
-          "  [#{event.elapsed_s}s] FINGERPRINT: collected"
+        :observation ->
+          "  [#{ts}] Noticed: #{event.detail}"
 
-        _ ->
-          "  [#{event.elapsed_s}s] #{event.type}"
+        :action ->
+          format_action_note(ts, event)
       end
     end)
-    |> Enum.join("\n")
+  end
+
+  defp format_action_note(ts, %{tool: "do_nothing"} = event) do
+    reason = event[:params]["reason"] || "waiting"
+    "  [#{ts}] Decided to wait. (#{reason})"
+  end
+
+  defp format_action_note(ts, %{tool: "rewrite_section"} = event) do
+    section = event[:params]["section_id"]
+    content = event[:params]["content"] || ""
+    tone = event[:params]["tone"] || "subtle"
+    "  [#{ts}] Rewrote #{section} (#{tone}): \"#{content}\""
+  end
+
+  defp format_action_note(ts, %{tool: "add_margin_note"} = event) do
+    section = event[:params]["anchor_section"]
+    content = event[:params]["content"] || ""
+    author = event[:params]["author_name"] || "notiert"
+    "  [#{ts}] Left a margin note on #{section} as #{author}: \"#{content}\""
+  end
+
+  defp format_action_note(ts, %{tool: "adjust_visual"} = event) do
+    vars = event[:params]["css_variables"] || %{}
+    changes = Enum.map_join(vars, ", ", fn {k, v} -> "#{k}=#{v}" end)
+    "  [#{ts}] Adjusted visuals: #{changes}"
+  end
+
+  defp format_action_note(ts, %{tool: "show_ghost_cursor"} = event) do
+    label = event[:params]["cursor_label"] || "?"
+    behavior = event[:params]["behavior"] || "?"
+    "  [#{ts}] Showed ghost cursor \"#{label}\" (#{behavior})."
+  end
+
+  defp format_action_note(ts, %{tool: "request_browser_permission"} = event) do
+    perm = event[:params]["permission"]
+    "  [#{ts}] Triggered #{perm} permission dialog."
+  end
+
+  defp format_action_note(ts, event) do
+    "  [#{ts}] #{event.summary}"
   end
 
   defp phase_guidance(0) do
