@@ -177,8 +177,8 @@ defmodule Notiert.Director.Agent do
     PAGE MUTATIONS APPLIED:
     #{format_mutations(context.mutations)}
 
-    RECENT ACTIONS (last 6 ticks):
-    #{format_actions(context.recent_actions)}
+    INTERACTION LOG (full session history):
+    #{format_event_log(context.event_log)}
 
     PHASE GUIDANCE:
     #{phase_guidance}
@@ -286,11 +286,31 @@ defmodule Notiert.Director.Agent do
     |> Enum.join("\n")
   end
 
-  defp format_actions([]), do: "  (none yet)"
+  defp format_event_log([]), do: "  (none yet — session just started)"
 
-  defp format_actions(actions) do
-    actions
-    |> Enum.map(fn a -> "  tick #{a.tick}: #{a.summary}" end)
+  defp format_event_log(events) do
+    events
+    |> Enum.map(fn event ->
+      case event.type do
+        :action ->
+          "  [#{event.elapsed_s}s] ACTION: #{event.summary}"
+
+        :observation ->
+          "  [#{event.elapsed_s}s] OBSERVED: #{event.detail}"
+
+        :phase_change ->
+          "  [#{event.elapsed_s}s] PHASE: #{event.from} -> #{event.to}"
+
+        :permission ->
+          "  [#{event.elapsed_s}s] PERMISSION: #{event.permission} = #{event.result}"
+
+        :fingerprint ->
+          "  [#{event.elapsed_s}s] FINGERPRINT: collected"
+
+        _ ->
+          "  [#{event.elapsed_s}s] #{event.type}"
+      end
+    end)
     |> Enum.join("\n")
   end
 
