@@ -377,9 +377,10 @@ defmodule Notiert.Director.Agent do
     |> Enum.join("\n")
   end
 
-  defp format_notebook([]), do: "  (session just started, no notes yet)"
+  @doc "Format event log as the director's notebook. Used in prompts and the reveal section."
+  def format_notebook([]), do: "  (session just started, no notes yet)"
 
-  defp format_notebook(events) do
+  def format_notebook(events) do
     events
     |> group_into_moments()
     |> Enum.map_join("\n\n", &format_moment/1)

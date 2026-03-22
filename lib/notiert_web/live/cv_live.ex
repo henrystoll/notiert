@@ -379,14 +379,7 @@ defmodule NotiertWeb.CvLive do
         <%= if @phase in [:overt, :climax] and @event_log != [] do %>
           <section id="section-reveal" data-section="reveal" class="cv-section reveal-section">
             <h2 class="cv-heading">Session Log</h2>
-            <div class="reveal-log">
-              <%= for entry <- format_event_log(@event_log) do %>
-                <div class={"reveal-entry reveal-#{entry.type}"}>
-                  <span class="reveal-timestamp"><%= entry.timestamp %></span>
-                  <span class="reveal-text"><%= entry.text %></span>
-                </div>
-              <% end %>
-            </div>
+            <pre class="reveal-log"><%= Notiert.Director.Agent.format_notebook(@event_log) %></pre>
           </section>
         <% end %>
 
@@ -397,76 +390,6 @@ defmodule NotiertWeb.CvLive do
       </main>
     </div>
     """
-  end
-
-  defp format_event_log(events) do
-    events
-    |> Enum.map(fn event ->
-      ts = "#{event.elapsed_s}s"
-
-      {type, text} =
-        case event.type do
-          :fingerprint ->
-            {"observation", "Visitor identified"}
-
-          :phase_change ->
-            from = Notiert.Director.Phase.label(event[:from])
-            to = Notiert.Director.Phase.label(event[:to])
-            reason = if event[:reason] && event[:reason] != "", do: " — #{event[:reason]}", else: ""
-            {"phase", "#{from} → #{to}#{reason}"}
-
-          :permission ->
-            {"permission", "#{event.permission}: #{event.result}"}
-
-          :observation ->
-            {"observation", event.detail}
-
-          :action ->
-            format_action_for_reveal(event)
-        end
-
-      %{type: type, timestamp: ts, text: text}
-    end)
-  end
-
-  defp format_action_for_reveal(%{tool: "do_nothing"} = event) do
-    reason = event[:params]["reason"] || "waiting"
-    {"action", "Watching... (#{reason})"}
-  end
-
-  defp format_action_for_reveal(%{tool: "change_phase"} = event) do
-    phase = event[:params]["phase"] || "?"
-    reason = event[:params]["reason"] || ""
-    {"phase", "Shifted to #{phase}. #{reason}"}
-  end
-
-  defp format_action_for_reveal(%{tool: "rewrite_section"} = event) do
-    section = event[:params]["section_id"]
-    {"action", "Edited #{section}"}
-  end
-
-  defp format_action_for_reveal(%{tool: "add_margin_note"} = event) do
-    section = event[:params]["anchor_section"]
-    author = event[:params]["author_name"] || "notiert"
-    {"action", "#{author} left a note on #{section}"}
-  end
-
-  defp format_action_for_reveal(%{tool: "adjust_visual"}) do
-    {"action", "Adjusted the page"}
-  end
-
-  defp format_action_for_reveal(%{tool: "show_ghost_cursor"} = event) do
-    label = event[:params]["cursor_label"] || "?"
-    {"action", "#{label} appeared"}
-  end
-
-  defp format_action_for_reveal(%{tool: "request_browser_permission"} = event) do
-    perm = event[:params]["permission"]
-    {"permission", "Asked for #{perm}"}
-  end
-
-  defp format_action_for_reveal(event) do
-    {"action", event[:summary] || "Unknown action"}
   end
 
   defp margin_note(assigns) do
