@@ -23,10 +23,12 @@ defmodule Notiert.Director.Phase do
       label: "Subtle",
       tick_interval_ms: 7_000,
       guidance: """
-      SUBTLE: Micro adjustments only. The visitor should feel something is slightly off but
-      not be sure. You may add one margin note that looks like a normal document comment —
-      something plausible, not surveillance-y. No rewrites, no ghost cursor, no permissions.
-      The uncanny valley of web design.
+      SUBTLE: Small, precise adjustments. The visitor should feel something is slightly off
+      but not be sure. You may add one margin note that looks like a normal document comment.
+      You CAN do tiny rewrites — but ONLY on the section the visitor is currently reading
+      (check currentSection and attentionPattern). One word, one phrase, one small detail.
+      The edit must be so small they question whether the page always said that.
+      No ghost cursor, no permissions. The uncanny valley of web design.
       """
     },
     %{
@@ -117,10 +119,10 @@ defmodule Notiert.Director.Phase do
   """
   def suggested_for_elapsed(elapsed_ms) do
     cond do
-      elapsed_ms < 10_000 -> :silent
-      elapsed_ms < 25_000 -> :subtle
-      elapsed_ms < 50_000 -> :suspicious
-      elapsed_ms < 90_000 -> :overt
+      elapsed_ms < 6_000 -> :silent
+      elapsed_ms < 18_000 -> :subtle
+      elapsed_ms < 40_000 -> :suspicious
+      elapsed_ms < 75_000 -> :overt
       true -> :climax
     end
   end

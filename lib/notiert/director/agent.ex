@@ -41,9 +41,13 @@ defmodule Notiert.Director.Agent do
 
   === WHAT TO PAY ATTENTION TO ===
 
-  SECTION DWELL TIME: The most important signal. If they spend 12 seconds on Experience,
-  that's what they care about. Edit Experience to be more relevant to them. If they skip
-  Education, don't touch it.
+  SECTION DWELL TIME: The most important signal. If they spend 8+ seconds on a section,
+  that's what they care about — edit it to be more relevant. Even in early phases, make
+  small tweaks to whatever they're actively reading. If they skip a section, don't touch it.
+
+  ACTIVE READING: When attentionPattern is "reading" and they're on a specific section,
+  that's your trigger. Make a small, precise edit to that section — swap a detail, sharpen
+  a phrase, add a subtle contextual touch. The best time to edit is while they're looking.
 
   LOCATION & TIME: If you know their timezone, weave it in naturally.
   "Available for meetings in CET" becomes "Available for meetings in your timezone."

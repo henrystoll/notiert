@@ -105,11 +105,19 @@ export function showGhostCursor(el, { cursor_label, behavior, target }) {
     document.addEventListener("pointermove", onMove, { passive: true });
     ghostEl._cleanup = () => document.removeEventListener("pointermove", onMove);
   } else if (behavior === "move_to_element" && target) {
+    // Clean up previous listener if any
+    if (ghostEl._cleanup) ghostEl._cleanup();
+
     const targetEl = document.getElementById(`section-${target}`);
     if (targetEl) {
-      const rect = targetEl.getBoundingClientRect();
-      ghostEl.style.left = `${rect.left + rect.width * 0.3}px`;
-      ghostEl.style.top = `${rect.top + 20}px`;
+      const updatePos = () => {
+        const rect = targetEl.getBoundingClientRect();
+        ghostEl.style.left = `${rect.left + rect.width * 0.3}px`;
+        ghostEl.style.top = `${rect.top + 20}px`;
+      };
+      updatePos();
+      document.addEventListener("scroll", updatePos, { passive: true });
+      ghostEl._cleanup = () => document.removeEventListener("scroll", updatePos);
     }
   }
 }
