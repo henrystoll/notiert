@@ -403,6 +403,54 @@ body {
   border: none;
 }
 
+/* ---- Debug panel ---- */
+.debug-panel {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 2px solid var(--strikethrough-color);
+}
+
+.debug-heading {
+  color: var(--strikethrough-color);
+  border-bottom-color: var(--strikethrough-color);
+}
+
+.debug-section {
+  margin-bottom: 16px;
+}
+
+.debug-subheading {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--strikethrough-color);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.debug-pre {
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--fg-secondary);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-height: none;
+  overflow: visible;
+}
+
+.debug-log {
+  max-height: 400px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ---- Safari-specific fixes ---- */
 
 /* Fix Safari flex gap fallback */
@@ -417,7 +465,8 @@ body {
   .margin-note,
   .cv-footer,
   .version-label,
-  .reveal-section {
+  .reveal-section,
+  .debug-panel {
     display: none !important;
   }
 

@@ -35,16 +35,21 @@ defmodule NotiertWeb.CvLive do
         # Typing animation queue
         typing: nil,
         # Event log for reveal section
-        event_log: []
+        event_log: [],
+        # Debug: raw state for ?debug=1
+        debug_fingerprint: %{},
+        debug_behavior: %{},
+        debug_permissions: %{}
       )
 
     if connected?(socket) do
       session_id = generate_session_id()
+      visitor_ip = extract_visitor_ip(socket)
 
       {:ok, _pid} =
         DynamicSupervisor.start_child(
           Notiert.SessionSupervisor,
-          {Session, %{session_id: session_id, live_view_pid: self()}}
+          {Session, %{session_id: session_id, live_view_pid: self(), visitor_ip: visitor_ip}}
         )
 
       {:ok,
@@ -61,7 +66,7 @@ defmodule NotiertWeb.CvLive do
       Session.update_fingerprint(socket.assigns.session_id, fingerprint)
     end
 
-    {:noreply, socket}
+    {:noreply, assign(socket, debug_fingerprint: fingerprint)}
   end
 
   @impl true
@@ -70,7 +75,7 @@ defmodule NotiertWeb.CvLive do
       Session.update_behavior(socket.assigns.session_id, behavior)
     end
 
-    {:noreply, socket}
+    {:noreply, assign(socket, debug_behavior: behavior)}
   end
 
   @impl true
@@ -79,7 +84,8 @@ defmodule NotiertWeb.CvLive do
       Session.update_permission(socket.assigns.session_id, perm, result, data)
     end
 
-    {:noreply, socket}
+    permissions = Map.put(socket.assigns.debug_permissions, perm, result)
+    {:noreply, assign(socket, debug_permissions: permissions)}
   end
 
   # Director action callbacks from the Session process
@@ -183,6 +189,25 @@ defmodule NotiertWeb.CvLive do
   defp apply_director_action(%{"tool" => "do_nothing"}, socket), do: socket
 
   defp apply_director_action(_unknown, socket), do: socket
+
+  defp extract_visitor_ip(socket) do
+    # On Fly.io: fly-client-ip header has the real IP
+    # Fallback: x-forwarded-for, then peer_data
+    x_headers = get_connect_info(socket, :x_headers) || []
+
+    fly_ip = Enum.find_value(x_headers, fn {k, v} -> if k == "fly-client-ip", do: v end)
+    forwarded = Enum.find_value(x_headers, fn {k, v} -> if k == "x-forwarded-for", do: v end)
+
+    cond do
+      fly_ip -> fly_ip
+      forwarded -> forwarded |> String.split(",") |> List.first() |> String.trim()
+      true ->
+        case get_connect_info(socket, :peer_data) do
+          %{address: addr} -> :inet.ntoa(addr) |> to_string()
+          _ -> nil
+        end
+    end
+  end
 
   defp generate_session_id do
     :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
@@ -365,11 +390,43 @@ defmodule NotiertWeb.CvLive do
           <% end %>
         </section>
 
-        <%!-- Reveal: interaction log --%>
-        <%= if @phase in [:overt, :climax] and @event_log != [] do %>
+        <%!-- Reveal: interaction log (shown in overt/climax phases) --%>
+        <%= if not @debug and @phase in [:overt, :climax] and @event_log != [] do %>
           <section id="section-reveal" data-section="reveal" class="cv-section reveal-section">
             <h2 class="cv-heading">Session Log</h2>
             <pre class="reveal-log"><%= Notiert.Director.Agent.format_notebook(@event_log) %></pre>
+          </section>
+        <% end %>
+
+        <%!-- Debug panel: always visible with ?debug=1 --%>
+        <%= if @debug do %>
+          <section class="cv-section debug-panel">
+            <h2 class="cv-heading debug-heading">Debug</h2>
+
+            <div class="debug-section">
+              <h3 class="debug-subheading">Session</h3>
+              <pre class="debug-pre"><%= "id: #{@session_id || "connecting..."}\nphase: #{@phase}\ncursor: #{if @ghost_cursor, do: "#{@ghost_cursor.label} @ #{@ghost_cursor.target}", else: "hidden"}\nmutations: #{inspect(Map.keys(@mutations))}\nmargin_notes: #{inspect(Map.keys(@margin_notes))}" %></pre>
+            </div>
+
+            <div class="debug-section">
+              <h3 class="debug-subheading">Fingerprint</h3>
+              <pre class="debug-pre"><%= format_debug_fingerprint(@debug_fingerprint) %></pre>
+            </div>
+
+            <div class="debug-section">
+              <h3 class="debug-subheading">Behavior</h3>
+              <pre class="debug-pre"><%= format_debug_behavior(@debug_behavior) %></pre>
+            </div>
+
+            <div class="debug-section">
+              <h3 class="debug-subheading">Permissions</h3>
+              <pre class="debug-pre"><%= inspect(@debug_permissions, pretty: true) %></pre>
+            </div>
+
+            <div class="debug-section">
+              <h3 class="debug-subheading">Event Log (<%= length(@event_log) %> events)</h3>
+              <pre class="debug-pre debug-log"><%= Notiert.Director.Agent.format_notebook(@event_log) %></pre>
+            </div>
           </section>
         <% end %>
 
@@ -380,6 +437,62 @@ defmodule NotiertWeb.CvLive do
       </main>
     </div>
     """
+  end
+
+  defp format_debug_fingerprint(fp) when map_size(fp) == 0, do: "(awaiting...)"
+
+  defp format_debug_fingerprint(fp) do
+    touch = fp["maxTouchPoints"] || 0
+    device = if touch > 0, do: "touch (#{touch}pt)", else: "desktop"
+
+    [
+      "device: #{device}",
+      "screen: #{fp["screenWidth"]}x#{fp["screenHeight"]} @#{fp["pixelRatio"]}x",
+      "viewport: #{fp["viewportWidth"]}x#{fp["viewportHeight"]}",
+      "tz: #{fp["timezone"]} (#{fp["localHour"]}:00 #{fp["dayOfWeek"]})",
+      "dark: #{fp["darkMode"]}, dnt: #{fp["doNotTrack"]}",
+      "connection: #{fp["connectionType"]} #{fp["connectionDownlink"]}Mbps",
+      "referrer: #{fp["referrer"] || "direct"}",
+      "ua: #{String.slice(fp["userAgent"] || "", 0..80)}"
+    ]
+    |> Enum.join("\n")
+  end
+
+  defp format_debug_behavior(b) when map_size(b) == 0, do: "(awaiting...)"
+
+  defp format_debug_behavior(b) do
+    dwells =
+      case b["sectionDwells"] do
+        d when is_map(d) ->
+          d
+          |> Enum.map(fn {s, data} -> "  #{s}: #{data["totalMs"] || 0}ms (#{data["entries"] || 0}x)" end)
+          |> Enum.join("\n")
+
+        _ ->
+          "  (none)"
+      end
+
+    selections =
+      case b["textSelections"] do
+        s when is_list(s) and s != [] ->
+          s |> Enum.map(fn sel -> "  \"#{String.slice(sel["text"] || "", 0..40)}\"" end) |> Enum.join("\n")
+
+        _ ->
+          "  (none)"
+      end
+
+    [
+      "attention: #{b["attentionPattern"]}",
+      "section: #{b["currentSection"]}",
+      "input: #{b["inputDevice"]}",
+      "scroll: #{b["scrollVelocity"]}px/s",
+      "idle: #{b["idleSeconds"]}s",
+      "focused: #{b["viewportFocused"]}",
+      "tab-aways: #{b["tabAwayCount"]} (#{b["tabAwayTotalMs"]}ms)",
+      "dwells:\n#{dwells}",
+      "selections:\n#{selections}"
+    ]
+    |> Enum.join("\n")
   end
 
   defp margin_note(assigns) do

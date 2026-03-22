@@ -13,6 +13,7 @@ ENV MIX_ENV=prod
 
 # Install dependencies
 COPY mix.exs ./
+COPY config ./config
 RUN mix deps.get --only prod
 RUN mix deps.compile
 
@@ -22,7 +23,6 @@ COPY priv ./priv
 RUN mix assets.deploy
 
 # Compile application
-COPY config ./config
 COPY lib ./lib
 RUN mix compile
 
