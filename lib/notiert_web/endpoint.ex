@@ -9,7 +9,7 @@ defmodule NotiertWeb.Endpoint do
   ]
 
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [:peer_data, :uri, :user_agent]],
+    websocket: [connect_info: [:peer_data, :uri, :user_agent, :x_headers]],
     longpoll: false
 
   plug Plug.Static,

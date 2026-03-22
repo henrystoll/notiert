@@ -381,6 +381,10 @@ defmodule Notiert.Director.Agent do
     "Just received visitor fingerprint. First real look at who this is. Decide your opening move."
   end
 
+  defp format_trigger(%{trigger: :enrichment}) do
+    "New intelligence arrived — IP data or location resolved. Check ENRICHMENT DATA section. Use this in your next edit."
+  end
+
   defp format_trigger(%{trigger: :interval}) do
     "Periodic check-in. Look at behavior data and decide if action is warranted."
   end
@@ -400,6 +404,7 @@ defmodule Notiert.Director.Agent do
         :section_change -> "  * MOVED TO: #{e[:to]} (from #{e[:from]}, spent #{e[:dwell_ms] || 0}ms)"
         :attention_change -> "  * ATTENTION: #{e[:from]} → #{e[:to]}"
         :fingerprint -> "  * FINGERPRINT received"
+        :enrichment -> "  * INTEL: #{e[:detail]}"
         :observation -> "  * #{e.detail}"
         _ -> "  * #{e.type}: #{e[:detail] || ""}"
       end
@@ -490,19 +495,53 @@ defmodule Notiert.Director.Agent do
   defp format_enrichment(e) when map_size(e) == 0, do: ""
 
   defp format_enrichment(e) do
+    parts = []
+
+    # IP data
     parts =
-      Enum.map(e, fn
-        {"geolocation", %{"latitude" => lat, "longitude" => lng}} ->
-          "  Geolocation: #{lat}, #{lng}"
+      case e["ip"] do
+        %{org: org, city: city, country: country, region: region} when not is_nil(org) ->
+          org_note = if org, do: "  Organization: #{org}", else: nil
+          loc_note = "  IP location: #{city}, #{region}, #{country}"
+          parts ++ Enum.filter([org_note, loc_note], & &1)
 
-        {"ambient_noise", level} ->
-          "  Ambient noise level: #{level}"
+        _ ->
+          parts
+      end
 
-        {k, v} ->
-          "  #{k}: #{inspect(v)}"
-      end)
+    # Geolocation (raw coords)
+    parts =
+      case e["geolocation"] do
+        %{"latitude" => lat, "longitude" => lng} ->
+          parts ++ ["  Geolocation coords: #{lat}, #{lng}"]
 
-    "ENRICHMENT DATA:\n" <> Enum.join(parts, "\n")
+        _ ->
+          parts
+      end
+
+    # Reverse geocode (place name)
+    parts =
+      case e["location"] do
+        %{display_name: name, place: place, city: city, country: country} ->
+          place_parts = [place, city, country] |> Enum.filter(& &1) |> Enum.join(", ")
+          parts ++ ["  Precise location: #{place_parts}", "  Full address: #{name}"]
+
+        _ ->
+          parts
+      end
+
+    # Ambient noise
+    parts =
+      case e["ambient_noise"] do
+        level when not is_nil(level) -> parts ++ ["  Ambient noise level: #{level}"]
+        _ -> parts
+      end
+
+    if parts == [] do
+      ""
+    else
+      "ENRICHMENT DATA (use this in edits — weave location/org naturally into CV content):\n" <> Enum.join(parts, "\n")
+    end
   end
 
   defp format_mutations(m) when map_size(m) == 0, do: "  (none — the CV is still in its original form)"
@@ -560,6 +599,10 @@ defmodule Notiert.Director.Agent do
 
   defp format_entry(%{type: :attention_change} = e) do
     "  [#{e.elapsed_s}s] VISITOR attention: #{e[:from]} → #{e[:to]}"
+  end
+
+  defp format_entry(%{type: :enrichment} = e) do
+    "  [#{e.elapsed_s}s] ENRICHED #{e.detail}"
   end
 
   defp format_entry(%{type: :observation} = e) do

@@ -40,6 +40,15 @@ The director can adjust visual presentation via CSS custom properties. Creative 
 - Can target individual sections or the whole page
 - All changes animate smoothly via CSS transitions
 
+### Enrichment pipeline
+Async lookups that resolve visitor signals into intelligence:
+- **IP → org/location** via ipinfo.io (free, no key, 50k/month). Fires on session start. Returns company name, city, country.
+- **Reverse geocode** via Nominatim/OSM (free, no key). Fires when geolocation granted. Returns place name (building, road, neighbourhood).
+- Results arrive as `:enrichment` events that trigger the director with `ENRICHED` log entries.
+- Director sees enrichment in both the event log and a dedicated ENRICHMENT DATA section in the prompt.
+
+Future: homelab researcher agent for OSINT (LinkedIn, blog posts, data aggregators). Separate project.
+
 ## Key Modules
 - `Notiert.Director.Agent` - Anthropic API integration, prompt building, event log formatting
 - `Notiert.Director.Session` - Per-visitor GenServer, event-driven director loop, permission timing

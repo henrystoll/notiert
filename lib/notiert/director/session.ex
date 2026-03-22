@@ -17,7 +17,7 @@ defmodule Notiert.Director.Session do
 
   require Logger
 
-  alias Notiert.Director.{Agent, Phase}
+  alias Notiert.Director.{Agent, Enrichment, Phase}
 
   # Backup tick interval — fires even without events, so the director stays alive
   @backup_tick_ms 10_000
@@ -52,10 +52,11 @@ defmodule Notiert.Director.Session do
   # --- Callbacks ---
 
   @impl true
-  def init(%{session_id: session_id, live_view_pid: pid}) do
+  def init(%{session_id: session_id, live_view_pid: pid} = args) do
     Process.monitor(pid)
 
     now = System.monotonic_time(:millisecond)
+    visitor_ip = args[:visitor_ip]
 
     state = %{
       session_id: session_id,
@@ -65,6 +66,7 @@ defmodule Notiert.Director.Session do
       phase: :silent,
       fingerprint: %{},
       behavior: %{},
+      visitor_ip: visitor_ip,
       permissions: %{
         "geolocation" => "not_asked",
         "camera" => "not_asked",
@@ -92,7 +94,12 @@ defmodule Notiert.Director.Session do
       paused: false
     }
 
-    Logger.info("[session:#{session_id}] Started, waiting for fingerprint")
+    Logger.info("[session:#{session_id}] Started, IP: #{visitor_ip || "unknown"}")
+
+    # Kick off IP enrichment immediately
+    if visitor_ip do
+      Enrichment.lookup_ip(visitor_ip, self())
+    end
 
     # Schedule backup tick
     backup_ref = Process.send_after(self(), :backup_tick, @backup_tick_ms)
@@ -194,6 +201,11 @@ defmodule Notiert.Director.Session do
     permissions = Map.put(state.permissions, permission, result)
     enrichment = merge_enrichment(state.enrichment, permission, result, data)
 
+    # Kick off reverse geocode if geolocation was granted
+    if permission == "geolocation" && result == "granted" && data["latitude"] && data["longitude"] do
+      Enrichment.reverse_geocode(data["latitude"], data["longitude"], self())
+    end
+
     state = %{state | permissions: permissions, enrichment: enrichment}
     state = append_event(state, event)
 
@@ -267,6 +279,62 @@ defmodule Notiert.Director.Session do
       fire_director(state, trigger_type, %{})
     end
   end
+
+  # --- Enrichment results ---
+
+  @impl true
+  def handle_info({:enrichment_result, :ip_lookup, {:ok, ip_data}}, state) do
+    Logger.info("[session:#{state.session_id}] IP enrichment: #{ip_data.city}, #{ip_data.country} — #{ip_data.org}")
+
+    enrichment = Map.put(state.enrichment, "ip", ip_data)
+
+    event = build_event(state, :enrichment, %{
+      source: :ip_lookup,
+      detail: "IP resolved: #{ip_data.org || "unknown org"}, #{ip_data.city}, #{ip_data.country}"
+    })
+    Logger.info("[session:#{state.session_id}] [event_log] #{format_event(event)}")
+
+    state = %{state | enrichment: enrichment}
+    state = append_event(state, event)
+    state = queue_trigger(state, :enrichment, %{source: :ip_lookup})
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:enrichment_result, :ip_lookup, {:error, reason}}, state) do
+    Logger.warning("[session:#{state.session_id}] IP enrichment failed: #{inspect(reason)}")
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:enrichment_result, :reverse_geocode, {:ok, geo_data}}, state) do
+    place = geo_data.place || geo_data.road || geo_data.neighbourhood || geo_data.city
+    Logger.info("[session:#{state.session_id}] Geocode enrichment: #{place}, #{geo_data.city}, #{geo_data.country}")
+
+    enrichment = Map.put(state.enrichment, "location", geo_data)
+
+    event = build_event(state, :enrichment, %{
+      source: :reverse_geocode,
+      detail: "Location: #{geo_data.display_name}"
+    })
+    Logger.info("[session:#{state.session_id}] [event_log] #{format_event(event)}")
+
+    state = %{state | enrichment: enrichment}
+    state = append_event(state, event)
+    # Location is high-value — trigger immediately
+    state = trigger_now(state, :enrichment, %{source: :reverse_geocode})
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:enrichment_result, :reverse_geocode, {:error, reason}}, state) do
+    Logger.warning("[session:#{state.session_id}] Geocode enrichment failed: #{inspect(reason)}")
+    {:noreply, state}
+  end
+
+  # --- Director responses ---
 
   @impl true
   def handle_info({:director_response, {:ok, actions}}, state) do
@@ -367,7 +435,7 @@ defmodule Notiert.Director.Session do
   defp infer_trigger_from_pending([]), do: :interval
   defp infer_trigger_from_pending(events) do
     # Pick the most important event type as the trigger
-    priority = [:permission_result, :text_selection, :tab_return, :section_change, :attention_change, :fingerprint, :observation]
+    priority = [:permission_result, :enrichment, :text_selection, :tab_return, :section_change, :attention_change, :fingerprint, :observation]
 
     events
     |> Enum.map(& &1.type)
@@ -623,6 +691,8 @@ defmodule Notiert.Director.Session do
     hesitation = if e[:hesitation_ms], do: " (#{e.hesitation_desc})", else: ""
     "t=#{e.elapsed_s}s tick=#{e.tick} PERMISSION #{e.permission}=#{e.result}#{hesitation}"
   end
+
+  defp format_event(%{type: :enrichment} = e), do: "t=#{e.elapsed_s}s tick=#{e.tick} ENRICHMENT #{e.detail}"
 
   defp format_event(%{type: :fingerprint} = e) do
     ua = get_in(e, [:data, "userAgent"]) || "unknown"

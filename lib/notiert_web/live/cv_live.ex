@@ -44,11 +44,12 @@ defmodule NotiertWeb.CvLive do
 
     if connected?(socket) do
       session_id = generate_session_id()
+      visitor_ip = extract_visitor_ip(socket)
 
       {:ok, _pid} =
         DynamicSupervisor.start_child(
           Notiert.SessionSupervisor,
-          {Session, %{session_id: session_id, live_view_pid: self()}}
+          {Session, %{session_id: session_id, live_view_pid: self(), visitor_ip: visitor_ip}}
         )
 
       {:ok,
@@ -188,6 +189,25 @@ defmodule NotiertWeb.CvLive do
   defp apply_director_action(%{"tool" => "do_nothing"}, socket), do: socket
 
   defp apply_director_action(_unknown, socket), do: socket
+
+  defp extract_visitor_ip(socket) do
+    # On Fly.io: fly-client-ip header has the real IP
+    # Fallback: x-forwarded-for, then peer_data
+    x_headers = get_connect_info(socket, :x_headers) || []
+
+    fly_ip = Enum.find_value(x_headers, fn {k, v} -> if k == "fly-client-ip", do: v end)
+    forwarded = Enum.find_value(x_headers, fn {k, v} -> if k == "x-forwarded-for", do: v end)
+
+    cond do
+      fly_ip -> fly_ip
+      forwarded -> forwarded |> String.split(",") |> List.first() |> String.trim()
+      true ->
+        case get_connect_info(socket, :peer_data) do
+          %{address: addr} -> :inet.ntoa(addr) |> to_string()
+          _ -> nil
+        end
+    end
+  end
 
   defp generate_session_id do
     :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
