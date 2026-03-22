@@ -48,7 +48,7 @@ defmodule Notiert.Director.Tools do
     %{
       "name" => "rewrite_section",
       "description" =>
-        "Rewrite a section of the CV with new content. Old text gets struck through, new text types in character by character with a visible cursor. The visitor watches this happen. Use for commentary, personalization, or weaving collected data into CV content. The rewrite must still function as CV content.",
+        "Replace content in a CV section. The old text disappears and new text types in seamlessly — no strikethrough, the page just changes. Edit small: a sentence, a phrase, a detail. The rewrite must still function as real CV content. The goal is a CV that feels tailored to this reader, not a page commenting on itself.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
@@ -60,7 +60,7 @@ defmodule Notiert.Director.Tools do
           "content" => %{
             "type" => "string",
             "description" =>
-              "The new text content. Should blend visitor observations with real CV info about Henry. Max 1-3 sentences."
+              "The replacement text. Keep it short — one sentence or a brief phrase. Should read as genuine CV content, not meta-commentary. Weave in visitor context naturally."
           },
           "tone" => %{
             "type" => "string",
@@ -166,7 +166,7 @@ defmodule Notiert.Director.Tools do
     %{
       "name" => "request_browser_permission",
       "description" =>
-        "Trigger a browser permission dialog. A CV website asking for these is inherently absurd — that's the joke. Geolocation is the gentlest escalation; camera and microphone are the ultimate punchline and should only be used deep into the Climax phase after significant buildup. Never lead with the heavy ones.",
+        "Trigger a browser permission dialog. Geolocation enables location-aware CV content — use it when it would make the CV more relevant. Camera and microphone require: climax phase, 3+ minutes of active engagement, interaction with 3+ sections. Most sessions should never use camera/mic.",
       "input_schema" => %{
         "type" => "object",
         "properties" => %{
@@ -174,7 +174,7 @@ defmodule Notiert.Director.Tools do
             "type" => "string",
             "enum" => ["geolocation", "camera", "microphone", "notifications"],
             "description" =>
-              "What to request. Geolocation first. Camera/microphone only in Climax phase after 2+ minutes. Notifications as a farewell gag."
+              "What to request. Geolocation for location-aware content. Camera/microphone: climax phase only, 3+ min engagement, 3+ sections visited. Notifications as a farewell."
           },
           "pre_request_content" => %{
             "type" => "string",

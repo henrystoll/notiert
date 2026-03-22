@@ -9,6 +9,8 @@ defmodule NotiertWeb.CvLive do
 
   alias Notiert.Director.{Session, Phase}
 
+  @version "0.2.0-phoenix"
+
   @impl true
   def mount(params, _session, socket) do
     debug? = Map.has_key?(params, "debug")
@@ -16,6 +18,7 @@ defmodule NotiertWeb.CvLive do
     socket =
       socket
       |> assign(
+        version: @version,
         debug: debug?,
         phase: :silent,
         session_id: nil,
@@ -255,6 +258,8 @@ defmodule NotiertWeb.CvLive do
   def render(assigns) do
     ~H"""
     <div id="notiert-app" phx-hook="Notiert" data-debug={to_string(@debug)}>
+      <%!-- Version label --%>
+      <div class="version-label">notiert v<%= @version %></div>
       <%!-- Google Docs-style toolbar --%>
       <div id="toolbar" class={"toolbar #{if @toolbar_visible, do: "visible", else: ""}"}>
         <div class="toolbar-inner">

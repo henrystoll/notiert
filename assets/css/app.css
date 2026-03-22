@@ -21,20 +21,35 @@
 }
 
 *, *::before, *::after {
+  -webkit-box-sizing: border-box;
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
 * {
+  -webkit-transition:
+    color var(--transition-speed) ease,
+    background-color var(--transition-speed) ease,
+    font-size var(--transition-speed) ease,
+    opacity var(--transition-speed) ease,
+    -webkit-transform var(--transition-speed) ease,
+    transform var(--transition-speed) ease,
+    letter-spacing var(--transition-speed) ease,
+    border-color var(--transition-speed) ease;
   transition:
     color var(--transition-speed) ease,
     background-color var(--transition-speed) ease,
     font-size var(--transition-speed) ease,
     opacity var(--transition-speed) ease,
+    -webkit-transform var(--transition-speed) ease,
     transform var(--transition-speed) ease,
     letter-spacing var(--transition-speed) ease,
     border-color var(--transition-speed) ease;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -45,6 +60,20 @@ body {
   background: var(--bg-page);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- Version label ---- */
+.version-label {
+  position: fixed;
+  bottom: 8px;
+  right: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--border);
+  z-index: 50;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* ---- Toolbar ---- */
@@ -58,13 +87,16 @@ body {
   border-bottom: 1px solid var(--border);
   z-index: 100;
   opacity: 0;
+  -webkit-transform: translateY(-100%);
   transform: translateY(-100%);
+  -webkit-transition: opacity 0.6s ease, -webkit-transform 0.6s ease;
   transition: opacity 0.6s ease, transform 0.6s ease;
   pointer-events: none;
 }
 
 .toolbar.visible {
   opacity: 1;
+  -webkit-transform: translateY(0);
   transform: translateY(0);
   pointer-events: auto;
 }
@@ -74,8 +106,11 @@ body {
   margin: 0 auto;
   padding: 0 16px;
   height: 100%;
+  display: -webkit-flex;
   display: flex;
+  -webkit-align-items: center;
   align-items: center;
+  -webkit-justify-content: space-between;
   justify-content: space-between;
 }
 
@@ -86,32 +121,44 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .viewer-avatars {
+  display: -webkit-flex;
   display: flex;
   gap: 6px;
+  -webkit-align-items: center;
   align-items: center;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+  margin-left: 12px;
 }
 
 .viewer-avatar {
   width: 28px;
   height: 28px;
   border-radius: 50%;
+  display: -webkit-flex;
   display: flex;
+  -webkit-align-items: center;
   align-items: center;
+  -webkit-justify-content: center;
   justify-content: center;
   font-family: 'DM Mono', monospace;
   font-size: 13px;
   font-weight: 500;
   color: #fff;
   opacity: 0;
+  -webkit-transform: scale(0.5);
   transform: scale(0.5);
+  -webkit-transition: opacity 0.4s ease, -webkit-transform 0.4s ease;
   transition: opacity 0.4s ease, transform 0.4s ease;
 }
 
 .viewer-avatar.visible {
   opacity: 1;
+  -webkit-transform: scale(1);
   transform: scale(1);
 }
 
@@ -125,6 +172,8 @@ body {
   padding: 40px 24px;
   background: var(--bg);
   min-height: 100vh;
+  /* Safari: prevent content from jumping when keyboard appears */
+  min-height: -webkit-fill-available;
 }
 
 .toolbar.visible ~ .paper {
@@ -136,6 +185,7 @@ body {
   .paper {
     padding: 56px 48px;
     margin: 24px auto;
+    -webkit-box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
     border-radius: 2px;
   }
@@ -203,9 +253,13 @@ body {
 }
 
 .experience-header {
+  display: -webkit-flex;
   display: flex;
+  -webkit-justify-content: space-between;
   justify-content: space-between;
+  -webkit-align-items: baseline;
   align-items: baseline;
+  -webkit-flex-wrap: wrap;
   flex-wrap: wrap;
   gap: 4px;
 }
@@ -235,7 +289,9 @@ body {
 
 /* ---- Skills ---- */
 .skill-tags {
+  display: -webkit-flex;
   display: flex;
+  -webkit-flex-wrap: wrap;
   flex-wrap: wrap;
   gap: 6px;
 }
@@ -288,11 +344,16 @@ body {
   letter-spacing: 2px;
 }
 
-/* ---- Typing animation ---- */
-.struck {
-  text-decoration: line-through;
-  color: var(--strikethrough-color);
-  opacity: 0.5;
+/* ---- Rewrite animation ---- */
+
+/* In normal mode: old text fades out, new text replaces it seamlessly.
+   NO strikethrough — the edit should look like the page always said this. */
+.rewrite-old {
+  display: none;
+}
+
+.rewrite-new {
+  /* Inherits normal text styling — invisible edit */
 }
 
 .typing-cursor {
@@ -301,19 +362,22 @@ body {
   height: 1.1em;
   background: var(--cursor-color);
   margin-left: 1px;
+  -webkit-animation: blink 0.8s step-end infinite;
   animation: blink 0.8s step-end infinite;
   vertical-align: text-bottom;
 }
 
-@keyframes blink {
-  50% { opacity: 0; }
+@-webkit-keyframes blink { 50% { opacity: 0; } }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Debug mode: show strikethrough and highlight rewrites */
+.debug-rewrite .rewrite-old {
+  display: inline;
+  text-decoration: line-through;
+  color: var(--strikethrough-color);
+  opacity: 0.5;
 }
 
-.rewrite-new {
-  /* Normal text by default */
-}
-
-/* Debug mode: highlight LLM rewrites */
 .debug-rewrite .rewrite-new {
   color: var(--strikethrough-color) !important;
   background: rgba(217, 48, 37, 0.08);
@@ -327,6 +391,7 @@ body {
   pointer-events: none;
   z-index: 200;
   opacity: 0;
+  -webkit-transition: opacity 0.4s ease, left 0.15s ease-out, top 0.15s ease-out;
   transition: opacity 0.4s ease, left 0.15s ease-out, top 0.15s ease-out;
 }
 
@@ -363,12 +428,15 @@ body {
   padding: 10px 12px;
   margin-top: 8px;
   opacity: 0;
+  -webkit-transform: translateY(4px);
   transform: translateY(4px);
+  -webkit-transition: opacity 0.4s ease, -webkit-transform 0.4s ease;
   transition: opacity 0.4s ease, transform 0.4s ease;
 }
 
 .margin-note.visible {
   opacity: 1;
+  -webkit-transform: translateY(0);
   transform: translateY(0);
 }
 
@@ -394,11 +462,29 @@ body {
     top: 0;
     width: 230px;
     margin-top: 0;
+    -webkit-transform: translateX(10px);
     transform: translateX(10px);
   }
 
   .margin-note.visible {
+    -webkit-transform: translateX(0);
     transform: translateX(0);
+  }
+}
+
+/* ---- Safari-specific fixes ---- */
+
+/* Fix Safari flex gap fallback */
+@supports not (gap: 6px) {
+  .skill-tags > * { margin: 3px; }
+  .viewer-avatars > * { margin: 0 3px; }
+  .experience-header > * { margin: 2px; }
+}
+
+/* Fix Safari 100vh issue */
+@supports (-webkit-touch-callout: none) {
+  .paper {
+    min-height: -webkit-fill-available;
   }
 }
 
@@ -407,7 +493,8 @@ body {
   .toolbar,
   .ghost-cursor,
   .margin-note,
-  .cv-footer {
+  .cv-footer,
+  .version-label {
     display: none !important;
   }
 
@@ -416,6 +503,7 @@ body {
   }
 
   .paper {
+    -webkit-box-shadow: none;
     box-shadow: none;
     margin: 0;
     padding: 0;

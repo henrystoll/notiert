@@ -12,29 +12,31 @@ export function typeRewrite(el, { section_id, content, tone, typing_speed, debug
   // Find the main text content (first <p> or the content div itself)
   const target = sectionContent.querySelector("p") || sectionContent;
 
-  // Strike through existing content
+  // Wrap existing content — hidden in normal mode, struck through in debug
   const existingText = target.innerHTML;
-  const struck = document.createElement("span");
-  struck.className = "struck";
-  struck.innerHTML = existingText;
+  const old = document.createElement("span");
+  old.className = "rewrite-old";
+  old.innerHTML = existingText;
 
-  // Create new content span
+  // New content span — types in character by character
   const fresh = document.createElement("span");
   fresh.className = "rewrite-new";
 
-  // Add debug class to parent if debug mode
+  // Debug mode shows old text struck through + new text highlighted
   if (debug) {
     sectionContent.classList.add("debug-rewrite");
   }
 
-  // Create cursor
+  // Blinking cursor
   const cursor = document.createElement("span");
   cursor.className = "typing-cursor";
 
   // Replace content
   target.innerHTML = "";
-  target.appendChild(struck);
-  target.appendChild(document.createTextNode(" "));
+  target.appendChild(old);
+  if (debug) {
+    target.appendChild(document.createTextNode(" "));
+  }
   target.appendChild(fresh);
   target.appendChild(cursor);
 
@@ -91,16 +93,16 @@ export function showGhostCursor(el, { cursor_label, behavior, target }) {
   ghostEl.classList.add("visible");
 
   if (behavior === "follow_user") {
+    // Clean up previous listener if any
+    if (ghostEl._cleanup) ghostEl._cleanup();
+
     const onMove = (e) => {
-      // Follow with 400ms delay
       setTimeout(() => {
         ghostEl.style.left = `${e.clientX + 20}px`;
         ghostEl.style.top = `${e.clientY + 15}px`;
       }, 400);
     };
     document.addEventListener("pointermove", onMove, { passive: true });
-
-    // Store cleanup reference
     ghostEl._cleanup = () => document.removeEventListener("pointermove", onMove);
   } else if (behavior === "move_to_element" && target) {
     const targetEl = document.getElementById(`section-${target}`);
@@ -114,8 +116,6 @@ export function showGhostCursor(el, { cursor_label, behavior, target }) {
 
 // ---- Margin notes (client-side animation) ----
 export function showMarginNote({ section_id, content, author }) {
-  // The margin note is rendered server-side via LiveView assigns,
-  // but we add the .visible class for animation
   requestAnimationFrame(() => {
     const note = document.getElementById(`margin-note-${section_id}`);
     if (note) {
@@ -126,7 +126,6 @@ export function showMarginNote({ section_id, content, author }) {
 
 // ---- Permission requests ----
 export function requestPermission(hook, { permission, pre_request_content, on_granted_content, on_denied_content, target_section }) {
-  // Show pre-request note
   if (pre_request_content) {
     showMarginNote({ section_id: target_section, content: pre_request_content, author: "notiert" });
   }
@@ -137,7 +136,6 @@ export function requestPermission(hook, { permission, pre_request_content, on_gr
         const pos = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
         });
-
         hook.pushEvent("permission_result", {
           permission: "geolocation",
           result: "granted",
@@ -145,12 +143,49 @@ export function requestPermission(hook, { permission, pre_request_content, on_gr
           longitude: pos.coords.longitude,
           accuracy: pos.coords.accuracy,
         });
+      } else if (permission === "camera") {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach((t) => t.stop());
+        hook.pushEvent("permission_result", { permission: "camera", result: "granted" });
+      } else if (permission === "microphone") {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Measure ambient noise briefly
+        try {
+          const ctx = new AudioContext();
+          const src = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 256;
+          src.connect(analyser);
+          const data = new Uint8Array(analyser.frequencyBinCount);
+          await new Promise((r) => setTimeout(r, 1000));
+          analyser.getByteFrequencyData(data);
+          const avg = data.reduce((a, b) => a + b, 0) / data.length;
+          ctx.close();
+          stream.getTracks().forEach((t) => t.stop());
+          hook.pushEvent("permission_result", {
+            permission: "microphone",
+            result: "granted",
+            noise_level: Math.round(avg),
+          });
+        } catch {
+          stream.getTracks().forEach((t) => t.stop());
+          hook.pushEvent("permission_result", { permission: "microphone", result: "granted" });
+        }
+      } else if (permission === "notifications") {
+        const result = await Notification.requestPermission();
+        if (result === "granted") {
+          new Notification("Henry Stoll", {
+            body: "Data Scientist & Product Owner. Available for interesting conversations.",
+            icon: "data:text/plain,👁",
+          });
+        }
+        hook.pushEvent("permission_result", {
+          permission: "notifications",
+          result: result === "granted" ? "granted" : "denied",
+        });
       }
     } catch {
-      hook.pushEvent("permission_result", {
-        permission,
-        result: "denied",
-      });
+      hook.pushEvent("permission_result", { permission, result: "denied" });
     }
   }, 1500);
 }
