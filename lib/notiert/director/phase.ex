@@ -10,7 +10,7 @@ defmodule Notiert.Director.Phase do
     %{
       id: :silent,
       label: "Silent",
-      tick_interval_ms: 8_000,
+      tick_interval_ms: 5_000,
       guidance: """
       SILENT: You are invisible. The page is a normal CV. Use do_nothing or imperceptible
       adjust_visual only (shift a color by 1-2 points, nudge letter-spacing by 0.01em).
@@ -21,7 +21,7 @@ defmodule Notiert.Director.Phase do
     %{
       id: :subtle,
       label: "Subtle",
-      tick_interval_ms: 7_000,
+      tick_interval_ms: 5_000,
       guidance: """
       SUBTLE: Small, precise adjustments. The visitor should feel something is slightly off
       but not be sure. You may add one margin note that looks like a normal document comment.
@@ -34,18 +34,18 @@ defmodule Notiert.Director.Phase do
     %{
       id: :suspicious,
       label: "Suspicious",
-      tick_interval_ms: 7_000,
+      tick_interval_ms: 6_000,
       guidance: """
-      SUSPICIOUS: The toolbar is now visible. You can show the ghost cursor, add knowing
-      margin notes, and do your first section rewrite. The visitor should start questioning
-      whether the page is normal. Don't explain what's happening — let them figure it out.
-      One change per cycle maximum. The reveal is more powerful when they discover it themselves.
+      SUSPICIOUS: The ghost cursor can now appear. You can add knowing margin notes and do
+      bolder section rewrites. The visitor should start questioning whether the page is normal.
+      Don't explain what's happening — let them figure it out. One change per cycle maximum.
+      The reveal is more powerful when they discover it themselves.
       """
     },
     %{
       id: :overt,
       label: "Overt",
-      tick_interval_ms: 8_000,
+      tick_interval_ms: 7_000,
       guidance: """
       OVERT: Drop the pretense. Rewrite sections weaving in collected data — their browser,
       timezone, screen size, reading patterns. Request geolocation if the moment feels right.

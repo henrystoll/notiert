@@ -86,6 +86,9 @@ export function showGhostCursor(el, { cursor_label, behavior, target }) {
   const ghostEl = document.getElementById("ghost-cursor");
   if (!ghostEl) return;
 
+  // Clean up previous listener/animation
+  if (ghostEl._cleanup) ghostEl._cleanup();
+
   // Update label
   const labelEl = ghostEl.querySelector(".ghost-cursor-label");
   if (labelEl) labelEl.textContent = cursor_label;
@@ -93,31 +96,69 @@ export function showGhostCursor(el, { cursor_label, behavior, target }) {
   ghostEl.classList.add("visible");
 
   if (behavior === "follow_user") {
-    // Clean up previous listener if any
-    if (ghostEl._cleanup) ghostEl._cleanup();
+    let targetX = 0, targetY = 0, currentX = 0, currentY = 0;
+    let animating = false;
 
     const onMove = (e) => {
-      setTimeout(() => {
-        ghostEl.style.left = `${e.clientX + 20}px`;
-        ghostEl.style.top = `${e.clientY + 15}px`;
-      }, 400);
-    };
-    document.addEventListener("pointermove", onMove, { passive: true });
-    ghostEl._cleanup = () => document.removeEventListener("pointermove", onMove);
-  } else if (behavior === "move_to_element" && target) {
-    // Clean up previous listener if any
-    if (ghostEl._cleanup) ghostEl._cleanup();
+      // Use touch position on mobile, pointer on desktop
+      const x = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
+      const y = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
+      targetX = x + 20;
+      targetY = y + 15;
 
+      if (!animating) {
+        animating = true;
+        animate();
+      }
+    };
+
+    const animate = () => {
+      // Smooth lerp toward target
+      currentX += (targetX - currentX) * 0.15;
+      currentY += (targetY - currentY) * 0.15;
+      ghostEl.style.left = `${currentX}px`;
+      ghostEl.style.top = `${currentY}px`;
+
+      if (Math.abs(targetX - currentX) > 0.5 || Math.abs(targetY - currentY) > 0.5) {
+        ghostEl._raf = requestAnimationFrame(animate);
+      } else {
+        animating = false;
+      }
+    };
+
+    document.addEventListener("pointermove", onMove, { passive: true });
+    document.addEventListener("touchmove", onMove, { passive: true });
+    ghostEl._cleanup = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("touchmove", onMove);
+      if (ghostEl._raf) cancelAnimationFrame(ghostEl._raf);
+    };
+  } else if (behavior === "move_to_element" && target) {
     const targetEl = document.getElementById(`section-${target}`);
     if (targetEl) {
+      let ticking = false;
       const updatePos = () => {
         const rect = targetEl.getBoundingClientRect();
         ghostEl.style.left = `${rect.left + rect.width * 0.3}px`;
         ghostEl.style.top = `${rect.top + 20}px`;
+        ticking = false;
       };
+
+      const onScroll = () => {
+        if (!ticking) {
+          ticking = true;
+          requestAnimationFrame(updatePos);
+        }
+      };
+
       updatePos();
-      document.addEventListener("scroll", updatePos, { passive: true });
-      ghostEl._cleanup = () => document.removeEventListener("scroll", updatePos);
+      window.addEventListener("scroll", onScroll, { passive: true });
+      // Also update on resize (mobile address bar show/hide)
+      window.addEventListener("resize", onScroll, { passive: true });
+      ghostEl._cleanup = () => {
+        window.removeEventListener("scroll", onScroll);
+        window.removeEventListener("resize", onScroll);
+      };
     }
   }
 }
@@ -183,7 +224,7 @@ export function requestPermission(hook, { permission, pre_request_content, on_gr
         const result = await Notification.requestPermission();
         if (result === "granted") {
           new Notification("Henry Stoll", {
-            body: "Data Scientist & Product Owner. Available for interesting conversations.",
+            body: "GenAI Engineer & AI Architect. Available for interesting conversations.",
             icon: "data:text/plain,👁",
           });
         }

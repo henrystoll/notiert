@@ -1,4 +1,4 @@
-/* notiert — Google Docs aesthetic, mobile-first */
+/* notiert — clean CV aesthetic, mobile-first (iPhone Safari/Chrome) */
 
 :root {
   --bg: #ffffff;
@@ -74,96 +74,10 @@ body {
   pointer-events: none;
   -webkit-user-select: none;
   user-select: none;
+  /* iPhone safe area */
+  bottom: max(8px, env(safe-area-inset-bottom));
+  right: max(8px, env(safe-area-inset-right));
 }
-
-/* ---- Toolbar ---- */
-.toolbar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 48px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  z-index: 100;
-  opacity: 0;
-  -webkit-transform: translateY(-100%);
-  transform: translateY(-100%);
-  -webkit-transition: opacity 0.6s ease, -webkit-transform 0.6s ease;
-  transition: opacity 0.6s ease, transform 0.6s ease;
-  pointer-events: none;
-}
-
-.toolbar.visible {
-  opacity: 1;
-  -webkit-transform: translateY(0);
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-.toolbar-inner {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 0 16px;
-  height: 100%;
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: space-between;
-  justify-content: space-between;
-}
-
-.doc-title {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.viewer-avatars {
-  display: -webkit-flex;
-  display: flex;
-  gap: 6px;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-flex-shrink: 0;
-  flex-shrink: 0;
-  margin-left: 12px;
-}
-
-.viewer-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: center;
-  justify-content: center;
-  font-family: 'DM Mono', monospace;
-  font-size: 13px;
-  font-weight: 500;
-  color: #fff;
-  opacity: 0;
-  -webkit-transform: scale(0.5);
-  transform: scale(0.5);
-  -webkit-transition: opacity 0.4s ease, -webkit-transform 0.4s ease;
-  transition: opacity 0.4s ease, transform 0.4s ease;
-}
-
-.viewer-avatar.visible {
-  opacity: 1;
-  -webkit-transform: scale(1);
-  transform: scale(1);
-}
-
-.viewer-you { background: var(--accent); }
-.viewer-ghost { background: #34a853; }
 
 /* ---- Paper ---- */
 .paper {
@@ -172,12 +86,11 @@ body {
   padding: 40px 24px;
   background: var(--bg);
   min-height: 100vh;
-  /* Safari: prevent content from jumping when keyboard appears */
-  min-height: -webkit-fill-available;
-}
-
-.toolbar.visible ~ .paper {
-  margin-top: 72px;
+  min-height: 100dvh;
+  /* iPhone safe areas */
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+  padding-bottom: max(40px, env(safe-area-inset-bottom));
 }
 
 /* On larger screens, add paper shadow */
@@ -188,10 +101,6 @@ body {
     -webkit-box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
     border-radius: 2px;
-  }
-
-  .toolbar.visible ~ .paper {
-    margin-top: 72px;
   }
 }
 
@@ -391,8 +300,10 @@ body {
   pointer-events: none;
   z-index: 200;
   opacity: 0;
-  -webkit-transition: opacity 0.4s ease, left 0.15s ease-out, top 0.15s ease-out;
-  transition: opacity 0.4s ease, left 0.15s ease-out, top 0.15s ease-out;
+  /* No transition on left/top — we animate via rAF for smooth mobile perf */
+  -webkit-transition: opacity 0.4s ease;
+  transition: opacity 0.4s ease;
+  will-change: transform, opacity;
 }
 
 .ghost-cursor.visible {
@@ -427,6 +338,7 @@ body {
   border-radius: 4px;
   padding: 10px 12px;
   margin-top: 8px;
+  font-size: 13px;
   opacity: 0;
   -webkit-transform: translateY(4px);
   transform: translateY(4px);
@@ -455,7 +367,7 @@ body {
 }
 
 /* On larger screens, position margin notes to the right */
-@media (min-width: 900px) {
+@media (min-width: 1100px) {
   .margin-note {
     position: absolute;
     right: -260px;
@@ -496,20 +408,11 @@ body {
 /* Fix Safari flex gap fallback */
 @supports not (gap: 6px) {
   .skill-tags > * { margin: 3px; }
-  .viewer-avatars > * { margin: 0 3px; }
   .experience-header > * { margin: 2px; }
-}
-
-/* Fix Safari 100vh issue */
-@supports (-webkit-touch-callout: none) {
-  .paper {
-    min-height: -webkit-fill-available;
-  }
 }
 
 /* ---- Print ---- */
 @media print {
-  .toolbar,
   .ghost-cursor,
   .margin-note,
   .cv-footer,
